@@ -64,7 +64,7 @@ const uint8_t versionId = versionIdMajor << 4 | versionIdMinor;
 
 // Hardware pin definitions
 const uint8_t numberOfLights = 2;
-const pin_size_t pinLight[numberOfLights] = {PIN_PB1, PIN_PB0};
+const pin_size_t pinLight[numberOfLights] = {PIN_PB0, PIN_PB1};
 //                      Light # on the PCB      0        1
 const uint8_t warmWhiteLight = 0;
 const uint8_t coolWhiteLight = 1;
@@ -116,7 +116,7 @@ const CVPair FactoryDefaultCVs[] =
         {CV8ManufacturerIDNumber, 13},
         {CV29ModeControl, 0},
 
-        {CV50LightBrightness, 50},
+        {CV50LightBrightness, 80},
         {CV51LightTemperature, 128},
         {CV52LightFctCtrl, 0}};
 
@@ -226,7 +226,7 @@ const uint8_t gamma[] = {
 
 void updateLights()
 {
-    uint16_t warmWhiteLEDBrightness, coolWhiteLEDBrightness;
+    uint32_t warmWhiteLEDBrightness, coolWhiteLEDBrightness;
 
     // Process the value of light outputs
     // We use analogWrite() as all output pins support PWM
@@ -236,7 +236,17 @@ void updateLights()
         coolWhiteLEDBrightness = (cvsCache[CV50LightBrightness] * cvsCache[CV51LightTemperature]) >> 8;
         analogWrite(pinLight[warmWhiteLight], gamma[warmWhiteLEDBrightness]);
         analogWrite(pinLight[coolWhiteLight], gamma[coolWhiteLEDBrightness]);
-    }
+        #ifdef DEBUG
+            Serial.print("Writing warmWhiteLEDBrightness: ");
+            Serial.print(warmWhiteLEDBrightness);
+            Serial.print(" | after gamma: ");
+            Serial.println(gamma[warmWhiteLEDBrightness]);
+            Serial.print("Writing coolWhiteLEDBrightness: ");
+            Serial.print(coolWhiteLEDBrightness);
+            Serial.print(" | after gamma: ");
+            Serial.println(gamma[coolWhiteLEDBrightness]);
+        #endif
+        }
     else
     {
         analogWrite(pinLight[warmWhiteLight], 0);
@@ -275,7 +285,7 @@ void setup()
     Serial.swap(); // Use the second set of serial pins. TX is on PA1
     Serial.begin(115200);
     Serial.println();
-    Serial.println("-- Starting tiny DCC decoder --");
+    Serial.println("-- Starting tiny DCC interior light decoder --");
 #endif
 
     readFctsToCache();
@@ -286,23 +296,24 @@ void setup()
     Dcc.pin(pinDCCInput, false);
     Dcc.init(MAN_ID_DIY, versionId, FLAGS_MY_ADDRESS_ONLY | FLAGS_AUTO_FACTORY_DEFAULT, 0);
 
-    // Commented out as not necessary with Attiny
+    // Commented out as not necessary with Attiny. Uncomment for debugging purposes only
     // notifyCVResetFactoryDefault() is automatically called
     // at very first call (i.e. unprogrammed EEPROM) of NmraDcc::init() with FLAGS_AUTO_FACTORY_DEFAULT set
-    // notifyCVResetFactoryDefault();
+    notifyCVResetFactoryDefault();
 
     readCvsToCache();
+    updateLights();
 }
 
 #ifdef DEBUG
-uint16_t loopCounterLow = 20000;
-uint16_t loopCounterHigh = 0;
+uint32_t loopCounterLow = 200000;
+uint32_t loopCounterHigh = 0;
 #endif
 
 void loop()
 {
 #ifdef DEBUG
-    if (loopCounterLow == 20000)
+    if (loopCounterLow == 200000)
     {
         loopCounterLow = 0;
         Serial.print("loop ");
