@@ -37,14 +37,14 @@ CV7     Manufacturer Version Number
 CV8     Manufacturer ID Number
 CV29    Mode Control
 
-CV50    Light Brightness (0..255)
-CV51    Light Temperature (0..255)
+CV96    Light Brightness (0..255)
+CV97    Light Temperature (0..255)
             0 = warm white
           128 = natural white (default)
           255 = cool white
-CV52    Light Function control
-          0 = F0 (default)
-          1 = F1
+CV98    Light Function control
+          0 = F0
+          1 = F1 (default)
           2 = F2
           3 = F3
           4 = F4
@@ -90,14 +90,14 @@ const uint8_t CV8ManufacturerIDNumber = 8;
 const uint8_t CV29ModeControl = 29;
 
 // CVs related to light outputs
-const uint8_t CV50LightBrightness = 50;
-const uint8_t CV51LightTemperature = 51;
-const uint8_t CV52LightFctCtrl = 52; // CV with the highest number
+const uint8_t CV96LightBrightness = 96;
+const uint8_t CV97LightTemperature = 97;
+const uint8_t CV98LightFctCtrl = 98; // CV with the highest number
 
 // cvsCache[] stores the CVs (in RAM, for quickest access)
 // The indexes of the array are the CV numbers
 // cvsCache[cvNumber] = cvValue
-const uint8_t numberOfCvsInCache = CV52LightFctCtrl + 1; // CV52LightFctCtrl is the CV with the highest number
+const uint8_t numberOfCvsInCache = CV98LightFctCtrl + 1; // CV98LightFctCtrl is the CV with the highest number
 uint8_t cvsCache[numberOfCvsInCache];
 
 // Structure for CV Values Table and default CV Values table as required by NmraDcc for storing default values
@@ -116,9 +116,9 @@ const CVPair FactoryDefaultCVs[] =
         {CV8ManufacturerIDNumber, 13},
         {CV29ModeControl, 0},
 
-        {CV50LightBrightness, 80},
-        {CV51LightTemperature, 128},
-        {CV52LightFctCtrl, 0}};
+        {CV96LightBrightness, 80},
+        {CV97LightTemperature, 128},
+        {CV98LightFctCtrl, 1}};
 
 void updateLights();
 
@@ -226,24 +226,25 @@ const uint8_t gamma[] = {
 
 void updateLights()
 {
-    uint32_t warmWhiteLEDBrightness, coolWhiteLEDBrightness;
+    uint8_t warmWhiteLEDBrightness, coolWhiteLEDBrightness;
 
     // Process the value of light outputs
     // We use analogWrite() as all output pins support PWM
-    if (fctsCache[cvsCache[CV52LightFctCtrl]])
+    if (fctsCache[cvsCache[CV98LightFctCtrl]])
     {
-        warmWhiteLEDBrightness = (cvsCache[CV50LightBrightness] * (255 - cvsCache[CV51LightTemperature])) >> 8;
-        coolWhiteLEDBrightness = (cvsCache[CV50LightBrightness] * cvsCache[CV51LightTemperature]) >> 8;
+        // Note: C always performs arithmetic operations in the size of the largest involved datatype. Here we cast the operands to uint16_t
+        warmWhiteLEDBrightness = ((uint16_t)cvsCache[CV96LightBrightness] * (255 - (uint16_t)cvsCache[CV97LightTemperature])) / 256;
+        coolWhiteLEDBrightness = ((uint16_t)cvsCache[CV96LightBrightness] * (uint16_t)cvsCache[CV97LightTemperature]) / 256;
         analogWrite(pinLight[warmWhiteLight], gamma[warmWhiteLEDBrightness]);
         analogWrite(pinLight[coolWhiteLight], gamma[coolWhiteLEDBrightness]);
         #ifdef DEBUG
-            Serial.print("Writing warmWhiteLEDBrightness: ");
+            Serial.print("Writing warmWhiteLEDBrightness: gamma[");
             Serial.print(warmWhiteLEDBrightness);
-            Serial.print(" | after gamma: ");
+            Serial.print("] = ");
             Serial.println(gamma[warmWhiteLEDBrightness]);
-            Serial.print("Writing coolWhiteLEDBrightness: ");
+            Serial.print("Writing coolWhiteLEDBrightness: gamma[");
             Serial.print(coolWhiteLEDBrightness);
-            Serial.print(" | after gamma: ");
+            Serial.print("] = ");
             Serial.println(gamma[coolWhiteLEDBrightness]);
         #endif
         }
@@ -253,6 +254,29 @@ void updateLights()
         analogWrite(pinLight[coolWhiteLight], 0);
     }
 }
+
+
+// void debugLights()
+// {
+//     uint8_t warmWhiteLEDBrightness, coolWhiteLEDBrightness;
+//     uint16_t CVLightBrightnessValue, CVLightTemperatureValue;
+//     Serial.println("debugLights()");
+
+//     for (CVLightBrightnessValue=0; CVLightBrightnessValue<256; CVLightBrightnessValue+=(CVLightBrightnessValue<248?8:7))
+//     {
+//         for (CVLightTemperatureValue=0;CVLightTemperatureValue<256; CVLightTemperatureValue+=(CVLightTemperatureValue<248?8:7))
+//         {
+//             warmWhiteLEDBrightness = (CVLightBrightnessValue * (255 - CVLightTemperatureValue)) / 256;
+//             coolWhiteLEDBrightness = (CVLightBrightnessValue * CVLightTemperatureValue) / 256;
+//             Serial.print(gamma[warmWhiteLEDBrightness]);
+//             Serial.print("/");
+//             Serial.print(gamma[coolWhiteLEDBrightness]);
+//             Serial.print(", ");
+//         }
+//         Serial.println("");
+//     }
+// }
+
 
 // This callback function is called by the NmraDcc library when a DCC ACK needs to be sent
 // Calling this function should cause an increased 60mA current drain on the power supply for 6ms to ACK a CV Read
@@ -269,6 +293,8 @@ void notifyCVAck(void)
 
 void setup()
 {
+    // delay(2000);
+
     // Set light pins and DCC ACK pin to outputs
     for (uint8_t lightNr = 0; lightNr < numberOfLights; lightNr++)
     {
@@ -282,7 +308,7 @@ void setup()
 #ifdef DEBUG
     // Serial TX used for debugging messages
     // Two mapping options for Serial are PB2, PB3, PB1, PB0 (default) and PA1, PA2, PA3, PA4 for TX, RX, XCK, XDIR.
-    Serial.swap(); // Use the second set of serial pins. TX is on PA1
+    Serial.swap(); // Use the second set of serial pins. TX is on now PA1
     Serial.begin(115200);
     Serial.println();
     Serial.println("-- Starting tiny DCC interior light decoder --");
@@ -296,13 +322,14 @@ void setup()
     Dcc.pin(pinDCCInput, false);
     Dcc.init(MAN_ID_DIY, versionId, FLAGS_MY_ADDRESS_ONLY | FLAGS_AUTO_FACTORY_DEFAULT, 0);
 
-    // Commented out as not necessary with Attiny. Uncomment for debugging purposes only
-    // notifyCVResetFactoryDefault() is automatically called
-    // at very first call (i.e. unprogrammed EEPROM) of NmraDcc::init() with FLAGS_AUTO_FACTORY_DEFAULT set
-    notifyCVResetFactoryDefault();
+    // Commented out as not necessary. Uncomment for debugging purposes only. notifyCVResetFactoryDefault() is
+    // automatically called at the very first call (i.e. unprogrammed EEPROM) of
+    // NmraDcc::init() when FLAGS_AUTO_FACTORY_DEFAULT is set
+    // notifyCVResetFactoryDefault();
 
     readCvsToCache();
     updateLights();
+    // debugLights();
 }
 
 #ifdef DEBUG
