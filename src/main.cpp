@@ -61,8 +61,8 @@ CV100   Computed Cool White LED Luminance (0..255). Can also be written directly
 // #define DEBUG
 
 // Versioning
-const uint8_t versionIdMajor = 1;
-const uint8_t versionIdMinor = 0;
+const uint8_t versionIdMajor = 2;
+const uint8_t versionIdMinor = 1;
 const uint8_t versionId = versionIdMajor << 4 | versionIdMinor;
 
 // Hardware pin definitions
@@ -76,13 +76,12 @@ const pin_size_t pinDCCInput = PIN_PA2;
 // Objects from NmraDcc
 NmraDcc Dcc;
 
-// Current value of loco functions
-uint8_t currentFuncState = 0;
-
-// fctsCache[] holds the current state (ON/OFF) of functions F0 to F4
-const uint8_t numberOfFctsInCache = 5;
-bool fctsCache[numberOfFctsInCache];
+// fctsCache holds the current state (ON/OFF) of loco functions F0 to F4
+// It is stored in the EEPROM at address fctsEepromAddress
+uint8_t fctsCache = 0;
 const uint16_t fctsEepromAddress = 255;
+const uint8_t numberOfFunctions = 5;
+const uint8_t fctBitMask[numberOfFunctions] = {FN_BIT_00, FN_BIT_01, FN_BIT_02, FN_BIT_03, FN_BIT_04};
 
 // CV number definitions
 const uint8_t CV0Check = 0;
@@ -95,12 +94,6 @@ const uint8_t CV29ModeControl = 29;
 const uint8_t CV96LightBrightness = 96;
 const uint8_t CV97LightTemperature = 97;
 const uint8_t CV98LightFctCtrl = 98; // CV with the highest number
-
-// cvsCache[] stores the CVs (in RAM, for quickest access)
-// The indexes of the array are the CV numbers
-// cvsCache[cvNumber] = cvValue
-const uint8_t numberOfCvsInCache = CV98LightFctCtrl + 1; // CV98LightFctCtrl is the CV with the highest number
-uint8_t cvsCache[numberOfCvsInCache];
 
 // Structure for CV Values Table and default CV Values table as required by NmraDcc for storing default values
 uint8_t FactoryDefaultCVIndex = 0;
@@ -124,7 +117,7 @@ const CVPair FactoryDefaultCVs[] =
 
 void updateLights();
 
-// This callback function is called when a CV Value changes so we can update cvsCache[]
+// This callback function is called when a CV Value changes so we can update the lights
 void notifyCVChange(uint16_t CV, uint8_t Value)
 {
 #ifdef DEBUG
@@ -133,9 +126,6 @@ void notifyCVChange(uint16_t CV, uint8_t Value)
     Serial.print(" Value: ");
     Serial.println(Value);
 #endif
-
-    if (CV < numberOfCvsInCache)
-        cvsCache[CV] = Value;
 
     updateLights();
 }
@@ -151,33 +141,12 @@ void notifyCVResetFactoryDefault()
     FactoryDefaultCVIndex = sizeof(FactoryDefaultCVs) / sizeof(CVPair);
 };
 
-// Function called at setup time to load all CVs to the array cvsCache[] in memory
-// Only the CVs used (i.e. listed in FactoryDefaultCVs) are read
-void readCvsToCache()
-{
-    for (uint8_t i = 0; i < sizeof(FactoryDefaultCVs) / sizeof(CVPair); i++)
-    {
-        uint16_t cvNr = FactoryDefaultCVs[i].CV;
-        cvsCache[cvNr] = Dcc.getCV(cvNr);
-#ifdef DEBUG
-        Serial.print("CV");
-        Serial.print(cvNr);
-        Serial.print("=");
-        Serial.print(cvsCache[cvNr]);
-        Serial.print("|");
-#endif
-    }
-#ifdef DEBUG
-    Serial.println();
-#endif
-}
-
 // This callback function is called whenever we receive a DCC Function packet for our address
 void notifyDccFunc(uint16_t Addr, DCC_ADDR_TYPE AddrType, FN_GROUP FuncGrp, uint8_t FuncState)
 {
     // Check that the DCC packet is for functions 0 to 4 (the only functions we use)
     // Check that one of the functions has changed
-    if (FuncGrp == FN_0_4 && currentFuncState != FuncState)
+    if (FuncGrp == FN_0_4 && FuncState != fctsCache)
     {
 #ifdef DEBUG
         Serial.print("Function Group: ");
@@ -185,26 +154,22 @@ void notifyDccFunc(uint16_t Addr, DCC_ADDR_TYPE AddrType, FN_GROUP FuncGrp, uint
         Serial.print("|State = 0b");
         Serial.println(FuncState, BIN);
 #endif
-        currentFuncState = FuncState;
-        fctsCache[0] = (bool)(FuncState & FN_BIT_00);
-        fctsCache[1] = (bool)(FuncState & FN_BIT_01);
-        fctsCache[2] = (bool)(FuncState & FN_BIT_02);
-        fctsCache[3] = (bool)(FuncState & FN_BIT_03);
-        fctsCache[4] = (bool)(FuncState & FN_BIT_04);
+        fctsCache = FuncState;
         updateLights();
-        EEPROM.write(fctsEepromAddress, FuncState);
+        EEPROM.write(fctsEepromAddress, fctsCache);
     }
 }
 
+// Restore the status of all functions from the EEPROM to the cache
 void readFctsToCache()
 {
-    uint8_t FuncState = EEPROM.read(fctsEepromAddress);
-    currentFuncState = FuncState;
-    fctsCache[0] = (bool)(FuncState & FN_BIT_00);
-    fctsCache[1] = (bool)(FuncState & FN_BIT_01);
-    fctsCache[2] = (bool)(FuncState & FN_BIT_02);
-    fctsCache[3] = (bool)(FuncState & FN_BIT_03);
-    fctsCache[4] = (bool)(FuncState & FN_BIT_04);
+    fctsCache = EEPROM.read(fctsEepromAddress);
+}
+
+// Returns true is the function "fctNumber" is on
+bool checkFct(uint8_t fctNumber)
+{
+    return (fctsCache & fctBitMask[fctNumber]);
 }
 
 // Luminance tables for warm white and cool white LEDs
@@ -257,11 +222,12 @@ void updateLights()
 
     // Process the value of light outputs
     // We use analogWrite() as all output pins support PWM
-    if (fctsCache[cvsCache[CV98LightFctCtrl]])
+    if (checkFct(Dcc.getCV(CV98LightFctCtrl)))
     {
-        // Note: C always performs arithmetic operations in the size of the largest involved datatype. Here we cast the operands to uint16_t
-        warmWhiteLEDBrightness = ((uint16_t)cvsCache[CV96LightBrightness] * (255 - (uint16_t)cvsCache[CV97LightTemperature])) / 256;
-        coolWhiteLEDBrightness = ((uint16_t)cvsCache[CV96LightBrightness] * (uint16_t)cvsCache[CV97LightTemperature]) / 256;
+        // Note: C always performs arithmetic operations in the size of the largest involved datatype.
+        // Here we cast the operands to uint16_t
+        warmWhiteLEDBrightness = ((uint16_t)Dcc.getCV(CV96LightBrightness) * (255 - (uint16_t)Dcc.getCV(CV97LightTemperature))) / 256;
+        coolWhiteLEDBrightness = ((uint16_t)Dcc.getCV(CV96LightBrightness) * (uint16_t)Dcc.getCV(CV97LightTemperature)) / 256;
         analogWrite(pinLight[warmWhiteLight], warmWhiteLuminanceTable[warmWhiteLEDBrightness]);
         analogWrite(pinLight[coolWhiteLight], coolWhiteLuminanceTable[coolWhiteLEDBrightness]);
 #ifdef DEBUG
@@ -326,7 +292,6 @@ void setup()
     // NmraDcc::init() when FLAGS_AUTO_FACTORY_DEFAULT is set
     // notifyCVResetFactoryDefault();
 
-    readCvsToCache();
     updateLights();
 }
 
