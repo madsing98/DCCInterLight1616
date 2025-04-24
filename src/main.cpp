@@ -1,5 +1,5 @@
 /*************************************************************************************************************\
-Mobile DCC decoder based on attiny1616 for Kato cars interior lights
+Mobile DCC decoder based on ATtiny1616 for Kato cars interior lights
 
 Core / libraries
 - megaTinyCore: https://github.com/SpenceKonde/megaTinyCore
@@ -10,7 +10,7 @@ Hardware resources
     - See page 182 of data sheet, 20.3.3.4.3 Single-Slope PWM Generation
     - megaTinyCore uses split-mode, to have up to six 8-bit PWM outputs (WO (Waveform Out) [0..5]).
     See 20.3.3.6 Split Mode - Two 8-Bit Timer/Counters
-    - From the table below, without using multiplex signals, PWM could be (for Attiny1616-MNR VQFN 20-pin)
+    - From the table below, without using multiplex signals, PWM could be (for ATtiny1616-MNR VQFN 20-pin)
         * WO0 - PB0 - pin 14
         * WO1 - PB1 - pin 13
         * WO2 - PB2 - pin 12
@@ -22,12 +22,13 @@ Hardware resources
             ((p) == PIN_PA4 || (p) == PIN_PA5 || (p) == PIN_PB2 || (p) == PIN_PB1 || (p) == PIN_PB0 || (p) == PIN_PA3)
 - NmraDcc
     - Uses the INT0/1 Hardware Interrupt and micros() ONLY
-    - On the attiny1616, millis() and micros() use TCD0
+    - On the ATtiny1616, millis() and micros() use TCD0
 
 - EEPROM
-    - attiny 1616 EEPROM size is 256 bytes
+    - The ATtiny1616 EEPROM size is 256 bytes, with addresses ranging from 0 to 255
     - NmraDcc uses the EEPROM to store CVs. CVs are stored at the location corresponding to the CV number
-      (i.e., CV29 is stored at location 29)
+      (i.e., CV29 is stored at EEPROM location 29). So, with the ATtiny1616 and the NmraDcc library, CV numbers must be
+      between 0 and 255
     - We will also use location 255 to store the status of the functions (F0 to F4). The goal is to have the lights
       in the correct state at power on, before the decoder receives any DCC packet setting these functions
 
@@ -48,6 +49,8 @@ CV98    Light Function control
           2 = F2
           3 = F3
           4 = F4
+CV99    Computed Warm White LED Luminance (0..255). Can also be written directly for debugging purposes
+CV100   Computed Cool White LED Luminance (0..255). Can also be written directly for debugging purposes
 \*************************************************************************************************************/
 
 #include <Arduino.h>
@@ -55,11 +58,11 @@ CV98    Light Function control
 #include <EEPROM.h>
 
 // Uncomment to send debugging messages to the serial line
-#define DEBUG
+// #define DEBUG
 
 // Versioning
-const uint8_t versionIdMajor = 0;
-const uint8_t versionIdMinor = 1;
+const uint8_t versionIdMajor = 1;
+const uint8_t versionIdMinor = 0;
 const uint8_t versionId = versionIdMajor << 4 | versionIdMinor;
 
 // Hardware pin definitions
@@ -69,7 +72,6 @@ const pin_size_t pinLight[numberOfLights] = {PIN_PB0, PIN_PB1};
 const uint8_t warmWhiteLight = 0;
 const uint8_t coolWhiteLight = 1;
 const pin_size_t pinDCCInput = PIN_PA2;
-const pin_size_t pinACKOutput = PIN_PA3;
 
 // Objects from NmraDcc
 NmraDcc Dcc;
@@ -116,7 +118,7 @@ const CVPair FactoryDefaultCVs[] =
         {CV8ManufacturerIDNumber, 13},
         {CV29ModeControl, 0},
 
-        {CV96LightBrightness, 80},
+        {CV96LightBrightness, 20},
         {CV97LightTemperature, 128},
         {CV98LightFctCtrl, 1}};
 
@@ -205,24 +207,49 @@ void readFctsToCache()
     fctsCache[4] = (bool)(FuncState & FN_BIT_04);
 }
 
-// Gamma table
-const uint8_t gamma[] = {
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1,
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2,
-    2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 5, 5, 5,
-    5, 6, 6, 6, 6, 7, 7, 7, 7, 8, 8, 8, 9, 9, 9, 10,
-    10, 10, 11, 11, 11, 12, 12, 13, 13, 13, 14, 14, 15, 15, 16, 16,
-    17, 17, 18, 18, 19, 19, 20, 20, 21, 21, 22, 22, 23, 24, 24, 25,
-    25, 26, 27, 27, 28, 29, 29, 30, 31, 32, 32, 33, 34, 35, 35, 36,
-    37, 38, 39, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 50,
-    51, 52, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 66, 67, 68,
-    69, 70, 72, 73, 74, 75, 77, 78, 79, 81, 82, 83, 85, 86, 87, 89,
-    90, 92, 93, 95, 96, 98, 99, 101, 102, 104, 105, 107, 109, 110, 112, 114,
-    115, 117, 119, 120, 122, 124, 126, 127, 129, 131, 133, 135, 137, 138, 140, 142,
-    144, 146, 148, 150, 152, 154, 156, 158, 160, 162, 164, 167, 169, 171, 173, 175,
-    177, 180, 182, 184, 186, 189, 191, 193, 196, 198, 200, 203, 205, 208, 210, 213,
-    215, 218, 220, 223, 225, 228, 231, 233, 236, 239, 241, 244, 247, 249, 252, 255};
+// Luminance tables for warm white and cool white LEDs
+// These tables implement the gamma function required to convert the desired brightness of the LED into
+// a luminance value used to drive the LED's PWM duty cycle
+// Note:
+//  - "Brightness" is the light intensity as perceived by the human eye
+//  - "Luminance" is the measurable amount of light really emitted by the LED
+const uint8_t warmWhiteLuminanceTable[] = {
+    0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   2, 
+    2,   2,   3,   3,   3,   3,   4,   4,   4,   4,   5,   5,   5,   6,   6,   6, 
+    7,   7,   7,   8,   8,   8,   9,   9,  10,  10,  10,  11,  11,  12,  12,  13, 
+   13,  14,  14,  15,  15,  16,  16,  17,  17,  18,  18,  19,  19,  20,  20,  21, 
+   22,  22,  23,  23,  24,  25,  25,  26,  27,  27,  28,  29,  29,  30,  31,  31, 
+   32,  33,  34,  34,  35,  36,  37,  37,  38,  39,  40,  40,  41,  42,  43,  44, 
+   44,  45,  46,  47,  48,  49,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58, 
+   58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,  69,  70,  71,  72,  73, 
+   74,  75,  76,  77,  78,  80,  81,  82,  83,  84,  85,  86,  87,  88,  89,  91, 
+   92,  93,  94,  95,  96,  97,  99, 100, 101, 102, 103, 105, 106, 107, 108, 109, 
+  111, 112, 113, 114, 116, 117, 118, 120, 121, 122, 123, 125, 126, 127, 129, 130, 
+  131, 133, 134, 135, 137, 138, 139, 141, 142, 144, 145, 146, 148, 149, 151, 152, 
+  153, 155, 156, 158, 159, 161, 162, 164, 165, 167, 168, 170, 171, 173, 174, 176, 
+  177, 179, 180, 182, 183, 185, 186, 188, 190, 191, 193, 194, 196, 198, 199, 201, 
+  202, 204, 206, 207, 209, 211, 212, 214, 216, 217, 219, 221, 222, 224, 226, 227, 
+  229, 231, 233, 234, 236, 238, 240, 241, 243, 245, 247, 248, 250, 252, 254, 255
+};
+
+const uint8_t coolWhiteLuminanceTable[] = {
+    0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2, 
+    2,   2,   2,   3,   3,   3,   3,   4,   4,   4,   4,   5,   5,   5,   5,   6, 
+    6,   6,   7,   7,   7,   8,   8,   8,   9,   9,   9,  10,  10,  11,  11,  11, 
+   12,  12,  13,  13,  14,  14,  15,  15,  16,  16,  16,  17,  17,  18,  19,  19, 
+   20,  20,  21,  21,  22,  22,  23,  24,  24,  25,  25,  26,  27,  27,  28,  28, 
+   29,  30,  30,  31,  32,  32,  33,  34,  34,  35,  36,  36,  37,  38,  39,  39, 
+   40,  41,  42,  42,  43,  44,  45,  45,  46,  47,  48,  49,  49,  50,  51,  52, 
+   53,  54,  54,  55,  56,  57,  58,  59,  60,  61,  62,  62,  63,  64,  65,  66, 
+   67,  68,  69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,  80,  81,  82, 
+   83,  84,  85,  86,  87,  88,  89,  90,  91,  92,  93,  94,  95,  97,  98,  99, 
+  100, 101, 102, 103, 104, 106, 107, 108, 109, 110, 111, 113, 114, 115, 116, 117, 
+  118, 120, 121, 122, 123, 125, 126, 127, 128, 130, 131, 132, 133, 135, 136, 137, 
+  138, 140, 141, 142, 144, 145, 146, 148, 149, 150, 152, 153, 154, 156, 157, 159, 
+  160, 161, 163, 164, 165, 167, 168, 170, 171, 173, 174, 175, 177, 178, 180, 181, 
+  183, 184, 186, 187, 189, 190, 192, 193, 195, 196, 198, 199, 201, 202, 204, 205, 
+  207, 208, 210, 211, 213, 215, 216, 218, 219, 221, 222, 224, 226, 227, 229, 230
+};
 
 void updateLights()
 {
@@ -235,48 +262,25 @@ void updateLights()
         // Note: C always performs arithmetic operations in the size of the largest involved datatype. Here we cast the operands to uint16_t
         warmWhiteLEDBrightness = ((uint16_t)cvsCache[CV96LightBrightness] * (255 - (uint16_t)cvsCache[CV97LightTemperature])) / 256;
         coolWhiteLEDBrightness = ((uint16_t)cvsCache[CV96LightBrightness] * (uint16_t)cvsCache[CV97LightTemperature]) / 256;
-        analogWrite(pinLight[warmWhiteLight], gamma[warmWhiteLEDBrightness]);
-        analogWrite(pinLight[coolWhiteLight], gamma[coolWhiteLEDBrightness]);
-        #ifdef DEBUG
-            Serial.print("Writing warmWhiteLEDBrightness: gamma[");
-            Serial.print(warmWhiteLEDBrightness);
-            Serial.print("] = ");
-            Serial.println(gamma[warmWhiteLEDBrightness]);
-            Serial.print("Writing coolWhiteLEDBrightness: gamma[");
-            Serial.print(coolWhiteLEDBrightness);
-            Serial.print("] = ");
-            Serial.println(gamma[coolWhiteLEDBrightness]);
-        #endif
-        }
+        analogWrite(pinLight[warmWhiteLight], warmWhiteLuminanceTable[warmWhiteLEDBrightness]);
+        analogWrite(pinLight[coolWhiteLight], coolWhiteLuminanceTable[coolWhiteLEDBrightness]);
+#ifdef DEBUG
+        Serial.print("Writing warmWhiteLEDBrightness: luminance[");
+        Serial.print(warmWhiteLEDBrightness);
+        Serial.print("] = ");
+        Serial.println(warmWhiteLuminanceTable[warmWhiteLEDBrightness]);
+        Serial.print("Writing coolWhiteLEDBrightness: luminance[");
+        Serial.print(coolWhiteLEDBrightness);
+        Serial.print("] = ");
+        Serial.println(coolWhiteLuminanceTable[coolWhiteLEDBrightness]);
+#endif
+    }
     else
     {
         analogWrite(pinLight[warmWhiteLight], 0);
         analogWrite(pinLight[coolWhiteLight], 0);
     }
 }
-
-
-// void debugLights()
-// {
-//     uint8_t warmWhiteLEDBrightness, coolWhiteLEDBrightness;
-//     uint16_t CVLightBrightnessValue, CVLightTemperatureValue;
-//     Serial.println("debugLights()");
-
-//     for (CVLightBrightnessValue=0; CVLightBrightnessValue<256; CVLightBrightnessValue+=(CVLightBrightnessValue<248?8:7))
-//     {
-//         for (CVLightTemperatureValue=0;CVLightTemperatureValue<256; CVLightTemperatureValue+=(CVLightTemperatureValue<248?8:7))
-//         {
-//             warmWhiteLEDBrightness = (CVLightBrightnessValue * (255 - CVLightTemperatureValue)) / 256;
-//             coolWhiteLEDBrightness = (CVLightBrightnessValue * CVLightTemperatureValue) / 256;
-//             Serial.print(gamma[warmWhiteLEDBrightness]);
-//             Serial.print("/");
-//             Serial.print(gamma[coolWhiteLEDBrightness]);
-//             Serial.print(", ");
-//         }
-//         Serial.println("");
-//     }
-// }
-
 
 // This callback function is called by the NmraDcc library when a DCC ACK needs to be sent
 // Calling this function should cause an increased 60mA current drain on the power supply for 6ms to ACK a CV Read
@@ -286,24 +290,19 @@ void notifyCVAck(void)
     Serial.println("notifyCVAck");
 #endif
 
-    digitalWrite(pinACKOutput, HIGH);
-    delay(8);
-    digitalWrite(pinACKOutput, LOW);
+    digitalWrite(pinLight[coolWhiteLight], HIGH);
+    delay(6);
+    digitalWrite(pinLight[coolWhiteLight], LOW);
 }
 
 void setup()
 {
-    // delay(2000);
-
     // Set light pins and DCC ACK pin to outputs
     for (uint8_t lightNr = 0; lightNr < numberOfLights; lightNr++)
     {
         analogWrite(pinLight[lightNr], 0);
         pinMode(pinLight[lightNr], OUTPUT);
     }
-
-    digitalWrite(pinACKOutput, 0);
-    pinMode(pinACKOutput, OUTPUT);
 
 #ifdef DEBUG
     // Serial TX used for debugging messages
@@ -329,7 +328,6 @@ void setup()
 
     readCvsToCache();
     updateLights();
-    // debugLights();
 }
 
 #ifdef DEBUG
