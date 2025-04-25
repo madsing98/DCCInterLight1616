@@ -39,18 +39,18 @@ CV8     Manufacturer ID Number
 CV29    Mode Control
 
 CV96    Light Brightness (0..255)
-CV97    Light Temperature (0..255)
-            0 = warm white
+CV97    Light CCT (Correlated Color Temperature) (0..255)
+            0 = warm white 3000K
           128 = natural white (default)
-          255 = cool white
+          255 = cool white 5000K
 CV98    Light Function control
           0 = F0
           1 = F1 (default)
           2 = F2
           3 = F3
           4 = F4
-CV99    Computed Warm White LED Luminance (0..255). Can also be written directly for debugging purposes
-CV100   Computed Cool White LED Luminance (0..255). Can also be written directly for debugging purposes
+          ...
+          28 = F28
 \*************************************************************************************************************/
 
 #include <Arduino.h>
@@ -61,7 +61,7 @@ CV100   Computed Cool White LED Luminance (0..255). Can also be written directly
 // #define DEBUG
 
 // Versioning
-const uint8_t versionIdMajor = 2;
+const uint8_t versionIdMajor = 3;
 const uint8_t versionIdMinor = 1;
 const uint8_t versionId = versionIdMajor << 4 | versionIdMinor;
 
@@ -76,12 +76,22 @@ const pin_size_t pinDCCInput = PIN_PA2;
 // Objects from NmraDcc
 NmraDcc Dcc;
 
-// fctsCache holds the current state (ON/OFF) of loco functions F0 to F4
-// It is stored in the EEPROM at address fctsEepromAddress
-uint8_t fctsCache = 0;
-const uint16_t fctsEepromAddress = 255;
-const uint8_t numberOfFunctions = 5;
-const uint8_t fctBitMask[numberOfFunctions] = {FN_BIT_00, FN_BIT_01, FN_BIT_02, FN_BIT_03, FN_BIT_04};
+// funcCache[] holds the current state (ON/OFF) of the 29 loco functions F0 to F28
+// They are split into 5 groups, which are stored in the EEPROM from the address fctsEepromAddress
+const uint8_t numberOfFunctionGroups = FN_LAST;
+const uint8_t numberOfFunctions = 29;
+uint8_t funcCache[numberOfFunctionGroups] = {0, 0, 0, 0, 0, 0};
+const uint16_t fctsEepromAddress = 255 - numberOfFunctionGroups + 1;
+const uint8_t funcBitMask[numberOfFunctions] = {FN_BIT_00, FN_BIT_01, FN_BIT_02, FN_BIT_03, FN_BIT_04,
+                                                FN_BIT_05, FN_BIT_06, FN_BIT_07, FN_BIT_08,
+                                                FN_BIT_09, FN_BIT_10, FN_BIT_11, FN_BIT_12,
+                                                FN_BIT_13, FN_BIT_14, FN_BIT_15, FN_BIT_16, FN_BIT_17, FN_BIT_18, FN_BIT_19, FN_BIT_20,
+                                                FN_BIT_21, FN_BIT_22, FN_BIT_23, FN_BIT_24, FN_BIT_25, FN_BIT_26, FN_BIT_27, FN_BIT_28};
+const uint8_t funcGroup[numberOfFunctions] =   {FN_0_4, FN_0_4, FN_0_4, FN_0_4, FN_0_4,
+                                                FN_5_8, FN_5_8, FN_5_8, FN_5_8, 
+                                                FN_9_12, FN_9_12, FN_9_12, FN_9_12,
+                                                FN_13_20, FN_13_20, FN_13_20, FN_13_20, FN_13_20, FN_13_20, FN_13_20, FN_13_20, 
+                                                FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28};
 
 // CV number definitions
 const uint8_t CV0Check = 0;
@@ -92,8 +102,8 @@ const uint8_t CV29ModeControl = 29;
 
 // CVs related to light outputs
 const uint8_t CV96LightBrightness = 96;
-const uint8_t CV97LightTemperature = 97;
-const uint8_t CV98LightFctCtrl = 98; // CV with the highest number
+const uint8_t CV97LightColorTemperature = 97;
+const uint8_t CV98LightFctCtrl = 98;
 
 // Structure for CV Values Table and default CV Values table as required by NmraDcc for storing default values
 uint8_t FactoryDefaultCVIndex = 0;
@@ -111,8 +121,8 @@ const CVPair FactoryDefaultCVs[] =
         {CV8ManufacturerIDNumber, 13},
         {CV29ModeControl, 0},
 
-        {CV96LightBrightness, 20},
-        {CV97LightTemperature, 128},
+        {CV96LightBrightness, 80},
+        {CV97LightColorTemperature, 128},
         {CV98LightFctCtrl, 1}};
 
 void updateLights();
@@ -144,9 +154,8 @@ void notifyCVResetFactoryDefault()
 // This callback function is called whenever we receive a DCC Function packet for our address
 void notifyDccFunc(uint16_t Addr, DCC_ADDR_TYPE AddrType, FN_GROUP FuncGrp, uint8_t FuncState)
 {
-    // Check that the DCC packet is for functions 0 to 4 (the only functions we use)
-    // Check that one of the functions has changed
-    if (FuncGrp == FN_0_4 && FuncState != fctsCache)
+    // Check that one of the functions has changed by comparing it to the cache
+    if(FuncState != funcCache[FuncGrp])
     {
 #ifdef DEBUG
         Serial.print("Function Group: ");
@@ -154,22 +163,25 @@ void notifyDccFunc(uint16_t Addr, DCC_ADDR_TYPE AddrType, FN_GROUP FuncGrp, uint
         Serial.print("|State = 0b");
         Serial.println(FuncState, BIN);
 #endif
-        fctsCache = FuncState;
+        funcCache[FuncGrp] = FuncState;
         updateLights();
-        EEPROM.write(fctsEepromAddress, fctsCache);
+        EEPROM.put(fctsEepromAddress, funcCache);
     }
 }
 
 // Restore the status of all functions from the EEPROM to the cache
-void readFctsToCache()
+void readFuncsToCache()
 {
-    fctsCache = EEPROM.read(fctsEepromAddress);
+    EEPROM.get(fctsEepromAddress, funcCache);
 }
 
-// Returns true is the function "fctNumber" is on
-bool checkFct(uint8_t fctNumber)
+// Returns true is the function "funcNumber" is on
+bool checkFunc(uint8_t funcNumber)
 {
-    return (fctsCache & fctBitMask[fctNumber]);
+    if (funcNumber < numberOfFunctions)
+        return (funcCache[funcGroup[funcNumber]] & funcBitMask[funcNumber]);
+    else
+        return false;
 }
 
 // Luminance tables for warm white and cool white LEDs
@@ -222,14 +234,14 @@ void updateLights()
 
     // Process the value of light outputs
     // We use analogWrite() as all output pins support PWM
-    if (checkFct(Dcc.getCV(CV98LightFctCtrl)))
+    if (checkFunc(Dcc.getCV(CV98LightFctCtrl)))
     {
         // Note: C always performs arithmetic operations in the size of the largest involved datatype.
         // Here we cast the operands to uint16_t
-        warmWhiteLEDBrightness = ((uint16_t)Dcc.getCV(CV96LightBrightness) * (255 - (uint16_t)Dcc.getCV(CV97LightTemperature))) / 256;
-        coolWhiteLEDBrightness = ((uint16_t)Dcc.getCV(CV96LightBrightness) * (uint16_t)Dcc.getCV(CV97LightTemperature)) / 256;
-        analogWrite(pinLight[warmWhiteLight], warmWhiteLuminanceTable[warmWhiteLEDBrightness]);
-        analogWrite(pinLight[coolWhiteLight], coolWhiteLuminanceTable[coolWhiteLEDBrightness]);
+        warmWhiteLEDBrightness = ((uint16_t)Dcc.getCV(CV96LightBrightness) * (255 - (uint16_t)Dcc.getCV(CV97LightColorTemperature))) / 256;
+        coolWhiteLEDBrightness = ((uint16_t)Dcc.getCV(CV96LightBrightness) * (uint16_t)Dcc.getCV(CV97LightColorTemperature)) / 256;
+        analogWrite(pinLight[warmWhiteLight], warmWhiteLuminanceTable[warmWhiteLEDBrightness] / 3);  // /3 simulates higher LED resistance
+        analogWrite(pinLight[coolWhiteLight], coolWhiteLuminanceTable[coolWhiteLEDBrightness] / 3);
 #ifdef DEBUG
         Serial.print("Writing warmWhiteLEDBrightness: luminance[");
         Serial.print(warmWhiteLEDBrightness);
@@ -256,14 +268,16 @@ void notifyCVAck(void)
     Serial.println("notifyCVAck");
 #endif
 
-    digitalWrite(pinLight[coolWhiteLight], HIGH);
+    analogWrite(pinLight[coolWhiteLight], 255 / 3);
+    analogWrite(pinLight[coolWhiteLight], 255 / 3);
     delay(6);
-    digitalWrite(pinLight[coolWhiteLight], LOW);
+    analogWrite(pinLight[warmWhiteLight], 0);
+    analogWrite(pinLight[coolWhiteLight], 0);
 }
 
 void setup()
 {
-    // Set light pins and DCC ACK pin to outputs
+    // Set light pins to outputs
     for (uint8_t lightNr = 0; lightNr < numberOfLights; lightNr++)
     {
         analogWrite(pinLight[lightNr], 0);
@@ -271,15 +285,17 @@ void setup()
     }
 
 #ifdef DEBUG
-    // Serial TX used for debugging messages
-    // Two mapping options for Serial are PB2, PB3, PB1, PB0 (default) and PA1, PA2, PA3, PA4 for TX, RX, XCK, XDIR.
+    // Serial TX used for debugging messages. RX not used (not connected)
+    // Two mapping options for Serial:
+    //   First set (default): TX, RX, XCK, XDIR on PB2, PB3, PB1, PB0
+    //   Second set :                              PA1, PA2, PA3, PA4
     Serial.swap(); // Use the second set of serial pins. TX is on now PA1
     Serial.begin(115200);
     Serial.println();
     Serial.println("-- Starting tiny DCC interior light decoder --");
 #endif
 
-    readFctsToCache();
+    readFuncsToCache();
 
     // Initialize the NmraDcc library
     // void NmraDcc::pin (uint8_t ExtIntPinNum, uint8_t EnablePullup)
