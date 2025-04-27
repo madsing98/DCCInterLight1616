@@ -40,17 +40,20 @@ CV29    Mode Control
 
 CV96    Light Brightness (0..255)
 CV97    Light CCT (Correlated Color Temperature) (0..255)
-            0 = warm white 3000K
-          128 = natural white (default)
-          255 = cool white 5000K
+            0: warm white 3000K
+          128: natural white (default)
+          255: cool white 5000K
 CV98    Light Function control
-          0 = F0
-          1 = F1 (default)
-          2 = F2
-          3 = F3
-          4 = F4
+          0: F0
+          1: F1 (default)
+          2: F2
+          3: F3
+          4: F4
           ...
-          28 = F28
+          28: F28
+CV99    Light Test
+          0: CV96/CV97 contain light brightness and CCT (default)
+          1: CV96/CV97 contain Warm White Luminance and Cool White Luminance (used for testing)
 \*************************************************************************************************************/
 
 #include <Arduino.h>
@@ -62,7 +65,7 @@ CV98    Light Function control
 
 // Versioning
 const uint8_t versionIdMajor = 3;
-const uint8_t versionIdMinor = 1;
+const uint8_t versionIdMinor = 2;
 const uint8_t versionId = versionIdMajor << 4 | versionIdMinor;
 
 // Hardware pin definitions
@@ -77,7 +80,7 @@ const pin_size_t pinDCCInput = PIN_PA2;
 NmraDcc Dcc;
 
 // funcCache[] holds the current state (ON/OFF) of the 29 loco functions F0 to F28
-// They are split into 5 groups, which are stored in the EEPROM from the address fctsEepromAddress
+// They are split into 5 groups (1 to 5, group 0 is not used), which are stored in the EEPROM from the address fctsEepromAddress
 const uint8_t numberOfFunctionGroups = FN_LAST;
 const uint8_t numberOfFunctions = 29;
 uint8_t funcCache[numberOfFunctionGroups] = {0, 0, 0, 0, 0, 0};
@@ -94,6 +97,7 @@ const uint8_t funcGroup[numberOfFunctions] =   {FN_0_4, FN_0_4, FN_0_4, FN_0_4, 
                                                 FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28};
 
 // CV number definitions
+// !!! CVs will be stored in the EEPROM by NmraDcc at the same address as their number
 const uint8_t CV0Check = 0;
 const uint8_t CV1PrimaryAddress = 1;
 const uint8_t CV7ManufacturerVersionNumber = 7;
@@ -104,10 +108,9 @@ const uint8_t CV29ModeControl = 29;
 const uint8_t CV96LightBrightness = 96;
 const uint8_t CV97LightColorTemperature = 97;
 const uint8_t CV98LightFctCtrl = 98;
+const uint8_t CV99LightTest = 99;
 
 // Structure for CV Values Table and default CV Values table as required by NmraDcc for storing default values
-uint8_t FactoryDefaultCVIndex = 0;
-
 struct CVPair
 {
     uint16_t CV;
@@ -121,9 +124,13 @@ const CVPair FactoryDefaultCVs[] =
         {CV8ManufacturerIDNumber, 13},
         {CV29ModeControl, 0},
 
-        {CV96LightBrightness, 80},
+        {CV96LightBrightness, 120},
         {CV97LightColorTemperature, 128},
-        {CV98LightFctCtrl, 1}};
+        {CV98LightFctCtrl, 1},
+        {CV99LightTest, 0}
+    };
+
+uint8_t FactoryDefaultCVIndex = 0;
 
 void updateLights();
 
@@ -190,42 +197,44 @@ bool checkFunc(uint8_t funcNumber)
 // Note:
 //  - "Brightness" is the light intensity as perceived by the human eye
 //  - "Luminance" is the measurable amount of light really emitted by the LED
+// warmWhiteLuminanceTable[]: Gamma = 2.2, output range = 255
 const uint8_t warmWhiteLuminanceTable[] = {
-    0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   2, 
-    2,   2,   3,   3,   3,   3,   4,   4,   4,   4,   5,   5,   5,   6,   6,   6, 
-    7,   7,   7,   8,   8,   8,   9,   9,  10,  10,  10,  11,  11,  12,  12,  13, 
-   13,  14,  14,  15,  15,  16,  16,  17,  17,  18,  18,  19,  19,  20,  20,  21, 
-   22,  22,  23,  23,  24,  25,  25,  26,  27,  27,  28,  29,  29,  30,  31,  31, 
-   32,  33,  34,  34,  35,  36,  37,  37,  38,  39,  40,  40,  41,  42,  43,  44, 
-   44,  45,  46,  47,  48,  49,  49,  50,  51,  52,  53,  54,  55,  56,  57,  58, 
-   58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,  69,  70,  71,  72,  73, 
-   74,  75,  76,  77,  78,  80,  81,  82,  83,  84,  85,  86,  87,  88,  89,  91, 
-   92,  93,  94,  95,  96,  97,  99, 100, 101, 102, 103, 105, 106, 107, 108, 109, 
-  111, 112, 113, 114, 116, 117, 118, 120, 121, 122, 123, 125, 126, 127, 129, 130, 
-  131, 133, 134, 135, 137, 138, 139, 141, 142, 144, 145, 146, 148, 149, 151, 152, 
-  153, 155, 156, 158, 159, 161, 162, 164, 165, 167, 168, 170, 171, 173, 174, 176, 
-  177, 179, 180, 182, 183, 185, 186, 188, 190, 191, 193, 194, 196, 198, 199, 201, 
-  202, 204, 206, 207, 209, 211, 212, 214, 216, 217, 219, 221, 222, 224, 226, 227, 
-  229, 231, 233, 234, 236, 238, 240, 241, 243, 245, 247, 248, 250, 252, 254, 255
+    0,   0,   0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1, 
+    1,   1,   1,   1,   1,   2,   2,   2,   2,   2,   2,   2,   2,   3,   3,   3, 
+    3,   3,   4,   4,   4,   4,   4,   5,   5,   5,   5,   6,   6,   6,   6,   7, 
+    7,   7,   8,   8,   8,   9,   9,   9,  10,  10,  10,  11,  11,  11,  12,  12, 
+   13,  13,  14,  14,  14,  15,  15,  16,  16,  17,  17,  18,  18,  19,  19,  20, 
+   20,  21,  22,  22,  23,  23,  24,  24,  25,  26,  26,  27,  28,  28,  29,  30, 
+   30,  31,  32,  32,  33,  34,  34,  35,  36,  37,  37,  38,  39,  40,  41,  41, 
+   42,  43,  44,  45,  46,  46,  47,  48,  49,  50,  51,  52,  53,  54,  55,  56, 
+   56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  67,  68,  69,  70,  71,  72, 
+   73,  74,  75,  76,  78,  79,  80,  81,  82,  83,  85,  86,  87,  88,  89,  91, 
+   92,  93,  94,  96,  97,  98, 100, 101, 102, 104, 105, 106, 108, 109, 110, 112, 
+  113, 115, 116, 118, 119, 120, 122, 123, 125, 126, 128, 129, 131, 132, 134, 136, 
+  137, 139, 140, 142, 143, 145, 147, 148, 150, 152, 153, 155, 157, 158, 160, 162, 
+  163, 165, 167, 169, 170, 172, 174, 176, 177, 179, 181, 183, 185, 187, 188, 190, 
+  192, 194, 196, 198, 200, 202, 204, 206, 208, 210, 212, 214, 216, 218, 220, 222, 
+  224, 226, 228, 230, 232, 234, 236, 238, 240, 242, 245, 247, 249, 251, 253, 255
 };
 
+// coolWhiteLuminanceTable[]: Gamma = 2.2, output range = 230
 const uint8_t coolWhiteLuminanceTable[] = {
-    0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2, 
-    2,   2,   2,   3,   3,   3,   3,   4,   4,   4,   4,   5,   5,   5,   5,   6, 
-    6,   6,   7,   7,   7,   8,   8,   8,   9,   9,   9,  10,  10,  11,  11,  11, 
-   12,  12,  13,  13,  14,  14,  15,  15,  16,  16,  16,  17,  17,  18,  19,  19, 
-   20,  20,  21,  21,  22,  22,  23,  24,  24,  25,  25,  26,  27,  27,  28,  28, 
-   29,  30,  30,  31,  32,  32,  33,  34,  34,  35,  36,  36,  37,  38,  39,  39, 
-   40,  41,  42,  42,  43,  44,  45,  45,  46,  47,  48,  49,  49,  50,  51,  52, 
-   53,  54,  54,  55,  56,  57,  58,  59,  60,  61,  62,  62,  63,  64,  65,  66, 
-   67,  68,  69,  70,  71,  72,  73,  74,  75,  76,  77,  78,  79,  80,  81,  82, 
-   83,  84,  85,  86,  87,  88,  89,  90,  91,  92,  93,  94,  95,  97,  98,  99, 
-  100, 101, 102, 103, 104, 106, 107, 108, 109, 110, 111, 113, 114, 115, 116, 117, 
-  118, 120, 121, 122, 123, 125, 126, 127, 128, 130, 131, 132, 133, 135, 136, 137, 
-  138, 140, 141, 142, 144, 145, 146, 148, 149, 150, 152, 153, 154, 156, 157, 159, 
-  160, 161, 163, 164, 165, 167, 168, 170, 171, 173, 174, 175, 177, 178, 180, 181, 
-  183, 184, 186, 187, 189, 190, 192, 193, 195, 196, 198, 199, 201, 202, 204, 205, 
-  207, 208, 210, 211, 213, 215, 216, 218, 219, 221, 222, 224, 226, 227, 229, 230
+    0,   0,   0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1, 
+    1,   1,   1,   1,   1,   1,   2,   2,   2,   2,   2,   2,   2,   2,   3,   3, 
+    3,   3,   3,   3,   4,   4,   4,   4,   4,   5,   5,   5,   5,   6,   6,   6, 
+    6,   7,   7,   7,   7,   8,   8,   8,   9,   9,   9,  10,  10,  10,  11,  11, 
+   11,  12,  12,  13,  13,  13,  14,  14,  15,  15,  16,  16,  17,  17,  17,  18, 
+   18,  19,  19,  20,  20,  21,  22,  22,  23,  23,  24,  24,  25,  25,  26,  27, 
+   27,  28,  29,  29,  30,  30,  31,  32,  32,  33,  34,  35,  35,  36,  37,  37, 
+   38,  39,  40,  40,  41,  42,  43,  43,  44,  45,  46,  47,  48,  48,  49,  50, 
+   51,  52,  53,  54,  55,  55,  56,  57,  58,  59,  60,  61,  62,  63,  64,  65, 
+   66,  67,  68,  69,  70,  71,  72,  73,  74,  75,  76,  77,  79,  80,  81,  82, 
+   83,  84,  85,  86,  88,  89,  90,  91,  92,  94,  95,  96,  97,  98, 100, 101, 
+  102, 104, 105, 106, 107, 109, 110, 111, 113, 114, 115, 117, 118, 119, 121, 122, 
+  124, 125, 127, 128, 129, 131, 132, 134, 135, 137, 138, 140, 141, 143, 144, 146, 
+  147, 149, 151, 152, 154, 155, 157, 159, 160, 162, 163, 165, 167, 168, 170, 172, 
+  173, 175, 177, 179, 180, 182, 184, 186, 187, 189, 191, 193, 194, 196, 198, 200, 
+  202, 204, 205, 207, 209, 211, 213, 215, 217, 219, 221, 223, 225, 227, 229, 230
 };
 
 void updateLights()
@@ -236,22 +245,30 @@ void updateLights()
     // We use analogWrite() as all output pins support PWM
     if (checkFunc(Dcc.getCV(CV98LightFctCtrl)))
     {
-        // Note: C always performs arithmetic operations in the size of the largest involved datatype.
-        // Here we cast the operands to uint16_t
-        warmWhiteLEDBrightness = ((uint16_t)Dcc.getCV(CV96LightBrightness) * (255 - (uint16_t)Dcc.getCV(CV97LightColorTemperature))) / 256;
-        coolWhiteLEDBrightness = ((uint16_t)Dcc.getCV(CV96LightBrightness) * (uint16_t)Dcc.getCV(CV97LightColorTemperature)) / 256;
-        analogWrite(pinLight[warmWhiteLight], warmWhiteLuminanceTable[warmWhiteLEDBrightness] / 3);  // /3 simulates higher LED resistance
-        analogWrite(pinLight[coolWhiteLight], coolWhiteLuminanceTable[coolWhiteLEDBrightness] / 3);
+        if(!Dcc.getCV(CV99LightTest))
+        {
+            // Note: C always performs arithmetic operations in the size of the largest involved datatype.
+            // Here we cast the operands to uint16_t
+            warmWhiteLEDBrightness = ((uint16_t)Dcc.getCV(CV96LightBrightness) * (255 - (uint16_t)Dcc.getCV(CV97LightColorTemperature))) / 256;
+            coolWhiteLEDBrightness = ((uint16_t)Dcc.getCV(CV96LightBrightness) * (uint16_t)Dcc.getCV(CV97LightColorTemperature)) / 256;
+            analogWrite(pinLight[warmWhiteLight], warmWhiteLuminanceTable[warmWhiteLEDBrightness] / 5);  // /5 simulates higher LED resistance
+            analogWrite(pinLight[coolWhiteLight], coolWhiteLuminanceTable[coolWhiteLEDBrightness] / 5);
 #ifdef DEBUG
-        Serial.print("Writing warmWhiteLEDBrightness: luminance[");
-        Serial.print(warmWhiteLEDBrightness);
-        Serial.print("] = ");
-        Serial.println(warmWhiteLuminanceTable[warmWhiteLEDBrightness]);
-        Serial.print("Writing coolWhiteLEDBrightness: luminance[");
-        Serial.print(coolWhiteLEDBrightness);
-        Serial.print("] = ");
-        Serial.println(coolWhiteLuminanceTable[coolWhiteLEDBrightness]);
+            Serial.print("Writing warmWhiteLEDBrightness: luminance[");
+            Serial.print(warmWhiteLEDBrightness);
+            Serial.print("] = ");
+            Serial.println(warmWhiteLuminanceTable[warmWhiteLEDBrightness]);
+            Serial.print("Writing coolWhiteLEDBrightness: luminance[");
+            Serial.print(coolWhiteLEDBrightness);
+            Serial.print("] = ");
+            Serial.println(coolWhiteLuminanceTable[coolWhiteLEDBrightness]);
 #endif
+        }
+        else
+        {
+            analogWrite(pinLight[warmWhiteLight], Dcc.getCV(CV96LightBrightness));
+            analogWrite(pinLight[coolWhiteLight], Dcc.getCV(CV97LightColorTemperature));
+        }
     }
     else
     {
