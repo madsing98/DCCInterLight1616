@@ -38,11 +38,11 @@ CV7     Manufacturer Version Number
 CV8     Manufacturer ID Number
 CV29    Mode Control
 
-CV96    Light Brightness (0..255)
+CV96    Light Brightness (0..255) (default: 80)
 CV97    Light CCT (Correlated Color Temperature) (0..255)
             0: warm white 3000K
           128: natural white (default)
-          255: cool white 5000K
+          255: cool white 6500K
 CV98    Light Function control
           0: F0
           1: F1 (default)
@@ -65,7 +65,7 @@ CV99    Light Test
 
 // Versioning
 const uint8_t versionIdMajor = 3;
-const uint8_t versionIdMinor = 2;
+const uint8_t versionIdMinor = 4;
 const uint8_t versionId = versionIdMajor << 4 | versionIdMinor;
 
 // Hardware pin definitions
@@ -124,7 +124,7 @@ const CVPair FactoryDefaultCVs[] =
         {CV8ManufacturerIDNumber, 13},
         {CV29ModeControl, 0},
 
-        {CV96LightBrightness, 120},
+        {CV96LightBrightness, 80},
         {CV97LightColorTemperature, 128},
         {CV98LightFctCtrl, 1},
         {CV99LightTest, 0}
@@ -197,7 +197,7 @@ bool checkFunc(uint8_t funcNumber)
 // Note:
 //  - "Brightness" is the light intensity as perceived by the human eye
 //  - "Luminance" is the measurable amount of light really emitted by the LED
-// warmWhiteLuminanceTable[]: Gamma = 2.2, output range = 255
+// warmWhiteLuminanceTable[]: Gamma = 2.2, Output Range = 255
 const uint8_t warmWhiteLuminanceTable[] = {
     0,   0,   0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1, 
     1,   1,   1,   1,   1,   2,   2,   2,   2,   2,   2,   2,   2,   3,   3,   3, 
@@ -217,7 +217,7 @@ const uint8_t warmWhiteLuminanceTable[] = {
   224, 226, 228, 230, 232, 234, 236, 238, 240, 242, 245, 247, 249, 251, 253, 255
 };
 
-// coolWhiteLuminanceTable[]: Gamma = 2.2, output range = 230
+// coolWhiteLuminanceTable[]: Gamma = 2.2, Output Range = 230
 const uint8_t coolWhiteLuminanceTable[] = {
     0,   0,   0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1, 
     1,   1,   1,   1,   1,   1,   2,   2,   2,   2,   2,   2,   2,   2,   3,   3, 
@@ -251,8 +251,8 @@ void updateLights()
             // Here we cast the operands to uint16_t
             warmWhiteLEDBrightness = ((uint16_t)Dcc.getCV(CV96LightBrightness) * (255 - (uint16_t)Dcc.getCV(CV97LightColorTemperature))) / 256;
             coolWhiteLEDBrightness = ((uint16_t)Dcc.getCV(CV96LightBrightness) * (uint16_t)Dcc.getCV(CV97LightColorTemperature)) / 256;
-            analogWrite(pinLight[warmWhiteLight], warmWhiteLuminanceTable[warmWhiteLEDBrightness] / 5);  // /5 simulates higher LED resistance
-            analogWrite(pinLight[coolWhiteLight], coolWhiteLuminanceTable[coolWhiteLEDBrightness] / 5);
+            analogWrite(pinLight[warmWhiteLight], warmWhiteLuminanceTable[warmWhiteLEDBrightness]);
+            analogWrite(pinLight[coolWhiteLight], coolWhiteLuminanceTable[coolWhiteLEDBrightness]);
 #ifdef DEBUG
             Serial.print("Writing warmWhiteLEDBrightness: luminance[");
             Serial.print(warmWhiteLEDBrightness);
@@ -285,8 +285,8 @@ void notifyCVAck(void)
     Serial.println("notifyCVAck");
 #endif
 
-    analogWrite(pinLight[coolWhiteLight], 255 / 3);
-    analogWrite(pinLight[coolWhiteLight], 255 / 3);
+    digitalWrite(pinLight[coolWhiteLight], HIGH);
+    digitalWrite(pinLight[coolWhiteLight], HIGH);
     delay(6);
     analogWrite(pinLight[warmWhiteLight], 0);
     analogWrite(pinLight[coolWhiteLight], 0);
