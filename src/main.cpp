@@ -285,7 +285,7 @@ void notifyCVAck(void)
     Serial.println("notifyCVAck");
 #endif
 
-    digitalWrite(pinLight[coolWhiteLight], HIGH);
+    digitalWrite(pinLight[warmWhiteLight], HIGH);
     digitalWrite(pinLight[coolWhiteLight], HIGH);
     delay(6);
     analogWrite(pinLight[warmWhiteLight], 0);
