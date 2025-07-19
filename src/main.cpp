@@ -61,7 +61,7 @@ CV99    Light Test
 #include <EEPROM.h>
 
 // Uncomment to send debugging messages to the serial line
-// #define DEBUG
+#define DEBUG
 
 // Versioning
 const uint8_t versionIdMajor = 3;
@@ -97,37 +97,38 @@ const uint8_t funcGroup[numberOfFunctions] =   {FN_0_4, FN_0_4, FN_0_4, FN_0_4, 
                                                 FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28};
 
 // CV number definitions
-// !!! CVs will be stored in the EEPROM by NmraDcc at the same address as their number
-const uint8_t CV0Check = 0;
-const uint8_t CV1PrimaryAddress = 1;
-const uint8_t CV7ManufacturerVersionNumber = 7;
-const uint8_t CV8ManufacturerIDNumber = 8;
-const uint8_t CV29ModeControl = 29;
+const uint8_t cvCheck = 0;
+const uint8_t cvPrimaryAddress = 1;
+const uint8_t cvManufacturerVersionNumber = 7;
+const uint8_t cvManufacturerIDNumber = 8;
+const uint8_t cvModeControl = 29;
 
 // CVs related to light outputs
-const uint8_t CV96LightBrightness = 96;
-const uint8_t CV97LightColorTemperature = 97;
-const uint8_t CV98LightFctCtrl = 98;
-const uint8_t CV99LightTest = 99;
+const uint8_t cvLightBrightness = 96;
+const uint8_t cvLightColorTemperature = 97;
+const uint8_t cvLightFctCtrl = 98;
+const uint8_t cvLightTest = 99;
 
-// Structure for CV Values Table and default CV Values table as required by NmraDcc for storing default values
-struct CVPair
+// Struct and table for storing CV's address in EEPROM, number and factory default value
+struct cvData
 {
-    uint16_t CV;
-    uint8_t Value;
+    uint16_t eepromAddress;
+    uint16_t cv;
+    uint8_t defaultValue;
+    bool writable;
 };
 
-const CVPair FactoryDefaultCVs[] =
+const struct cvData cvTable[] =
     {
-        {CV1PrimaryAddress, 3},
-        {CV7ManufacturerVersionNumber, 1},
-        {CV8ManufacturerIDNumber, 13},
-        {CV29ModeControl, 0},
+        {1, cvPrimaryAddress, 3, true},
+        {2, cvManufacturerVersionNumber, 1, false},
+        {3, cvManufacturerIDNumber, 13, false},
+        {4, cvModeControl, 0, true},
 
-        {CV96LightBrightness, 80},
-        {CV97LightColorTemperature, 128},
-        {CV98LightFctCtrl, 1},
-        {CV99LightTest, 0}
+        {5, cvLightBrightness, 80, true},
+        {6, cvLightColorTemperature, 128, true},
+        {7, cvLightFctCtrl, 1, true},
+        {8, cvLightTest, 0, true}
     };
 
 uint8_t FactoryDefaultCVIndex = 0;
@@ -155,7 +156,7 @@ void notifyCVResetFactoryDefault()
 #ifdef DEBUG
     Serial.println("notifyCVResetFactoryDefault");
 #endif
-    FactoryDefaultCVIndex = sizeof(FactoryDefaultCVs) / sizeof(CVPair);
+    FactoryDefaultCVIndex = sizeof(cvTable) / sizeof(cvData);
 };
 
 // This callback function is called whenever we receive a DCC Function packet for our address
@@ -243,14 +244,14 @@ void updateLights()
 
     // Process the value of light outputs
     // We use analogWrite() as all output pins support PWM
-    if (checkFunc(Dcc.getCV(CV98LightFctCtrl)))
+    if (checkFunc(Dcc.getCV(cvLightFctCtrl)))
     {
-        if(!Dcc.getCV(CV99LightTest))
+        if(!Dcc.getCV(cvLightTest))
         {
             // Note: C always performs arithmetic operations in the size of the largest involved datatype.
             // Here we cast the operands to uint16_t
-            warmWhiteLEDBrightness = ((uint16_t)Dcc.getCV(CV96LightBrightness) * (255 - (uint16_t)Dcc.getCV(CV97LightColorTemperature))) / 256;
-            coolWhiteLEDBrightness = ((uint16_t)Dcc.getCV(CV96LightBrightness) * (uint16_t)Dcc.getCV(CV97LightColorTemperature)) / 256;
+            warmWhiteLEDBrightness = ((uint16_t)Dcc.getCV(cvLightBrightness) * (255 - (uint16_t)Dcc.getCV(cvLightColorTemperature))) / 256;
+            coolWhiteLEDBrightness = ((uint16_t)Dcc.getCV(cvLightBrightness) * (uint16_t)Dcc.getCV(cvLightColorTemperature)) / 256;
             analogWrite(pinLight[warmWhiteLight], warmWhiteLuminanceTable[warmWhiteLEDBrightness]);
             analogWrite(pinLight[coolWhiteLight], coolWhiteLuminanceTable[coolWhiteLEDBrightness]);
 #ifdef DEBUG
@@ -266,8 +267,8 @@ void updateLights()
         }
         else
         {
-            analogWrite(pinLight[warmWhiteLight], Dcc.getCV(CV96LightBrightness));
-            analogWrite(pinLight[coolWhiteLight], Dcc.getCV(CV97LightColorTemperature));
+            analogWrite(pinLight[warmWhiteLight], Dcc.getCV(cvLightBrightness));
+            analogWrite(pinLight[coolWhiteLight], Dcc.getCV(cvLightColorTemperature));
         }
     }
     else
@@ -353,6 +354,6 @@ void loop()
     if (FactoryDefaultCVIndex && Dcc.isSetCVReady())
     {
         FactoryDefaultCVIndex--; // Decrement first as initially it is the size of the array
-        Dcc.setCV(FactoryDefaultCVs[FactoryDefaultCVIndex].CV, FactoryDefaultCVs[FactoryDefaultCVIndex].Value);
+        Dcc.setCV(cvTable[FactoryDefaultCVIndex].cv, cvTable[FactoryDefaultCVIndex].defaultValue);
     }
 }
