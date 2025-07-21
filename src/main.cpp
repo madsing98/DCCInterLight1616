@@ -37,25 +37,32 @@ CV1     Primary Address
 CV7     Manufacturer Version Number
 CV8     Manufacturer ID Number
 CV17+18 Extended Address
-CV19+20 Consist Address
+CV19    Consist Address
 CV29    Mode Control
 
-CV96    Light Brightness (0..255) (default: 80)
-CV97    Light CCT (Correlated Color Temperature) (0..255)
+CV40    Light Brightness (0..255) (default: 80)
+CV41    Light CCT (Correlated Color Temperature) (0..255)
             0: warm white 3000K
           128: natural white (default)
           255: cool white 6500K
-CV98    Light Function control
+CV42    Light Function control
           0: F0
           1: F1 (default)
           2: F2
-          3: F3
-          4: F4
           ...
           28: F28
-CV99    Light Test
-          0: CV96/CV97 contain light brightness and CCT (default)
-          1: CV96/CV97 contain Warm White Luminance and Cool White Luminance (used for testing)
+CV43    Light Brightness Set 2 (0..255) (default: 40)
+CV44    Light CCT (Correlated Color Temperature) Set 2 (0..255)
+CV45    Light Function control Set 2
+          0: F0
+          1: F1
+          2: F2
+          ...
+          28: F28
+          255: Not used (default)
+CV50    Light Test
+          0: CV40/CV41 contain light brightness and CCT (default)
+          1: CV40/CV41 contain Warm White Luminance and Cool White Luminance (used for testing)
 \*************************************************************************************************************/
 
 #include <Arduino.h>
@@ -63,10 +70,10 @@ CV99    Light Test
 #include <EEPROM.h>
 
 // Uncomment to send debugging messages to the serial line
-#define DEBUG
+//#define DEBUG
 
 // Versioning
-const uint8_t versionIdMajor = 4;
+const uint8_t versionIdMajor = 5;
 const uint8_t versionIdMinor = 0;
 const uint8_t versionId = versionIdMajor << 4 | versionIdMinor;
 
@@ -109,10 +116,13 @@ const uint8_t cvConsistAddress = 19;
 const uint8_t cvModeControl = 29;
 
 // CVs related to light outputs
-const uint8_t cvLightBrightness = 96;
-const uint8_t cvLightColorTemperature = 97;
-const uint8_t cvLightFctCtrl = 98;
-const uint8_t cvLightTest = 99;
+const uint8_t cvLightBrightness = 40;
+const uint8_t cvLightColorTemperature = 41;
+const uint8_t cvLightFctCtrl = 42;
+const uint8_t cvLightBrightness2 = 43;
+const uint8_t cvLightColorTemperature2 = 44;
+const uint8_t cvLightFctCtrl2 = 45;
+const uint8_t cvLightTest = 50;
 
 // Struct and table for storing CV's address in EEPROM, number and factory default value
 struct cvData
@@ -132,6 +142,9 @@ const struct cvData cvFactoryValues[] =
         {cvLightBrightness, 80},
         {cvLightColorTemperature, 128},
         {cvLightFctCtrl, 1},
+        {cvLightBrightness2, 40},
+        {cvLightColorTemperature2, 128},
+        {cvLightFctCtrl2, 255},
         {cvLightTest, 0}
     };
 
@@ -274,10 +287,21 @@ void updateLights()
     {
         if(!Dcc.getCV(cvLightTest))
         {
-            // Note: C always performs arithmetic operations in the size of the largest involved datatype.
-            // Here we cast the operands to uint16_t
-            warmWhiteLEDBrightness = ((uint16_t)Dcc.getCV(cvLightBrightness) * (255 - (uint16_t)Dcc.getCV(cvLightColorTemperature))) / 256;
-            coolWhiteLEDBrightness = ((uint16_t)Dcc.getCV(cvLightBrightness) * (uint16_t)Dcc.getCV(cvLightColorTemperature)) / 256;
+            // Check if we have to use brightness and CCT parameters set 1 or 2
+            if (Dcc.getCV(cvLightFctCtrl2) != 255 && checkFunc(Dcc.getCV(cvLightFctCtrl2)))
+            {
+                // Use Set 2
+                // Note: C always performs arithmetic operations in the size of the largest involved datatype
+                // Here we cast the operands to uint16_t
+                warmWhiteLEDBrightness = ((uint16_t)Dcc.getCV(cvLightBrightness2) * (255 - (uint16_t)Dcc.getCV(cvLightColorTemperature2))) / 256;
+                coolWhiteLEDBrightness = ((uint16_t)Dcc.getCV(cvLightBrightness2) * (uint16_t)Dcc.getCV(cvLightColorTemperature2)) / 256;
+            }
+            else
+            {
+                // Use Set 1
+                warmWhiteLEDBrightness = ((uint16_t)Dcc.getCV(cvLightBrightness) * (255 - (uint16_t)Dcc.getCV(cvLightColorTemperature))) / 256;
+                coolWhiteLEDBrightness = ((uint16_t)Dcc.getCV(cvLightBrightness) * (uint16_t)Dcc.getCV(cvLightColorTemperature)) / 256;
+            }
             analogWrite(pinLight[warmWhiteLight], warmWhiteLuminanceTable[warmWhiteLEDBrightness]);
             analogWrite(pinLight[coolWhiteLight], coolWhiteLuminanceTable[coolWhiteLEDBrightness]);
 #ifdef DEBUG
