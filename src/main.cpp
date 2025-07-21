@@ -39,28 +39,29 @@ CV8     Manufacturer ID Number
 CV17+18 Extended Address
 CV19    Consist Address
 CV29    Mode Control
+CV109-110  Manufacturer Version Number - Build number LSB and MSB
 
-CV40    Light Brightness (0..255) (default: 80)
-CV41    Light CCT (Correlated Color Temperature) (0..255)
+CV50    Light Brightness (0..255) (default: 80)
+CV51    Light CCT (Correlated Color Temperature) (0..255)
             0: warm white 3000K
           128: natural white (default)
           255: cool white 6500K
-CV42    Light Function control
+CV52    Light Function control
           0: F0
           1: F1 (default)
           2: F2
           ...
           28: F28
-CV43    Light Brightness Set 2 (0..255) (default: 40)
-CV44    Light CCT (Correlated Color Temperature) Set 2 (0..255)
-CV45    Light Function control Set 2
+CV53    Light Brightness Set 2 (0..255) (default: 40)
+CV54    Light CCT (Correlated Color Temperature) Set 2 (0..255)
+CV55    Light Function control Set 2
           0: F0
           1: F1
           2: F2
           ...
           28: F28
           255: Not used (default)
-CV50    Light Test
+CV60    Light Test
           0: CV40/CV41 contain light brightness and CCT (default)
           1: CV40/CV41 contain Warm White Luminance and Cool White Luminance (used for testing)
 \*************************************************************************************************************/
@@ -68,14 +69,10 @@ CV50    Light Test
 #include <Arduino.h>
 #include <NmraDcc.h>
 #include <EEPROM.h>
+#include <version.h>
 
 // Uncomment to send debugging messages to the serial line
 //#define DEBUG
-
-// Versioning
-const uint8_t versionIdMajor = 5;
-const uint8_t versionIdMinor = 0;
-const uint8_t versionId = versionIdMajor << 4 | versionIdMinor;
 
 // Hardware pin definitions
 const uint8_t numberOfLights = 2;
@@ -114,15 +111,17 @@ const uint8_t cvExtendedAddressMSB = 17;
 const uint8_t cvExtendedAddressLSB = 18;
 const uint8_t cvConsistAddress = 19;
 const uint8_t cvModeControl = 29;
+const uint8_t cvBuildNumberLSB = 109;
+const uint8_t cvBuildNumberMSB = 110;
 
 // CVs related to light outputs
-const uint8_t cvLightBrightness = 40;
-const uint8_t cvLightColorTemperature = 41;
-const uint8_t cvLightFctCtrl = 42;
-const uint8_t cvLightBrightness2 = 43;
-const uint8_t cvLightColorTemperature2 = 44;
-const uint8_t cvLightFctCtrl2 = 45;
-const uint8_t cvLightTest = 50;
+const uint8_t cvLightBrightness = 50;
+const uint8_t cvLightColorTemperature = 51;
+const uint8_t cvLightFctCtrl = 52;
+const uint8_t cvLightBrightness2 = 53;
+const uint8_t cvLightColorTemperature2 = 54;
+const uint8_t cvLightFctCtrl2 = 55;
+const uint8_t cvLightTest = 60;
 
 // Struct and table for storing CV's address in EEPROM, number and factory default value
 struct cvData
@@ -368,8 +367,9 @@ void setup()
     // Initialize the NmraDcc library
     // void NmraDcc::pin (uint8_t ExtIntPinNum, uint8_t EnablePullup)
     // void NmraDcc::init (uint8_t ManufacturerId, uint8_t VersionId, uint8_t Flags, uint8_t OpsModeAddressBaseCV)
+    // COMMIT_NUMBER is defined in version.h
     Dcc.pin(pinDCCInput, false);
-    Dcc.init(MAN_ID_DIY, versionId, FLAGS_MY_ADDRESS_ONLY | FLAGS_AUTO_FACTORY_DEFAULT, 0);
+    Dcc.init(MAN_ID_DIY, COMMIT_NUMBER, FLAGS_MY_ADDRESS_ONLY | FLAGS_AUTO_FACTORY_DEFAULT, 0);
 
     // Commented out as not necessary. Uncomment for debugging purposes only. notifyCVResetFactoryDefault() is
     // automatically called at the very first call (i.e. unprogrammed EEPROM) of
