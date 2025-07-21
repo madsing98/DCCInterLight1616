@@ -68,7 +68,7 @@ CV60    Light Test
 #include <Arduino.h>
 #include <NmraDcc.h>
 #include <EEPROM.h>
-#include <version.h>
+#include "version.h"
 
 // Uncomment to send debugging messages to the serial line
 //#define DEBUG
