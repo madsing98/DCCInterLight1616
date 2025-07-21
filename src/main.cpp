@@ -36,6 +36,8 @@ CV Map
 CV1     Primary Address
 CV7     Manufacturer Version Number
 CV8     Manufacturer ID Number
+CV17+18 Extended Address
+CV19+20 Consist Address
 CV29    Mode Control
 
 CV96    Light Brightness (0..255) (default: 80)
@@ -64,8 +66,8 @@ CV99    Light Test
 #define DEBUG
 
 // Versioning
-const uint8_t versionIdMajor = 3;
-const uint8_t versionIdMinor = 4;
+const uint8_t versionIdMajor = 4;
+const uint8_t versionIdMinor = 0;
 const uint8_t versionId = versionIdMajor << 4 | versionIdMinor;
 
 // Hardware pin definitions
@@ -101,6 +103,9 @@ const uint8_t cvCheck = 0;
 const uint8_t cvPrimaryAddress = 1;
 const uint8_t cvManufacturerVersionNumber = 7;
 const uint8_t cvManufacturerIDNumber = 8;
+const uint8_t cvExtendedAddressMSB = 17;
+const uint8_t cvExtendedAddressLSB = 18;
+const uint8_t cvConsistAddress = 19;
 const uint8_t cvModeControl = 29;
 
 // CVs related to light outputs
@@ -112,28 +117,47 @@ const uint8_t cvLightTest = 99;
 // Struct and table for storing CV's address in EEPROM, number and factory default value
 struct cvData
 {
-    uint16_t eepromAddress;
     uint16_t cv;
     uint8_t defaultValue;
-    bool writable;
 };
 
-const struct cvData cvTable[] =
+const struct cvData cvFactoryValues[] =
     {
-        {1, cvPrimaryAddress, 3, true},
-        {2, cvManufacturerVersionNumber, 1, false},
-        {3, cvManufacturerIDNumber, 13, false},
-        {4, cvModeControl, 0, true},
+        {cvPrimaryAddress, 3},
+        {cvManufacturerVersionNumber, 1},
+        {cvManufacturerIDNumber, 13},
+        {cvConsistAddress, 0},
+        {cvModeControl, 0},
 
-        {5, cvLightBrightness, 80, true},
-        {6, cvLightColorTemperature, 128, true},
-        {7, cvLightFctCtrl, 1, true},
-        {8, cvLightTest, 0, true}
+        {cvLightBrightness, 80},
+        {cvLightColorTemperature, 128},
+        {cvLightFctCtrl, 1},
+        {cvLightTest, 0}
     };
 
 uint8_t FactoryDefaultCVIndex = 0;
 
 void updateLights();
+
+// This callback function is called when the decoder enters or exits service mode
+// We update the lights at the end of the service mode
+void notifyServiceMode(bool inServiceMode)
+{
+#ifdef DEBUG
+    Serial.print("notifyServiceMode: inServiceMode: ");
+    Serial.println(inServiceMode);
+#endif
+
+    if (inServiceMode)
+    {
+        digitalWrite(pinLight[warmWhiteLight], LOW);
+        digitalWrite(pinLight[coolWhiteLight], LOW);
+    }
+    else
+    {
+        updateLights();
+    }
+}
 
 // This callback function is called when a CV Value changes so we can update the lights
 void notifyCVChange(uint16_t CV, uint8_t Value)
@@ -156,7 +180,7 @@ void notifyCVResetFactoryDefault()
 #ifdef DEBUG
     Serial.println("notifyCVResetFactoryDefault");
 #endif
-    FactoryDefaultCVIndex = sizeof(cvTable) / sizeof(cvData);
+    FactoryDefaultCVIndex = sizeof(cvFactoryValues) / sizeof(cvData);
 };
 
 // This callback function is called whenever we receive a DCC Function packet for our address
@@ -166,7 +190,9 @@ void notifyDccFunc(uint16_t Addr, DCC_ADDR_TYPE AddrType, FN_GROUP FuncGrp, uint
     if(FuncState != funcCache[FuncGrp])
     {
 #ifdef DEBUG
-        Serial.print("Function Group: ");
+        Serial.print("DCC Addr: ");
+        Serial.print(Addr);
+        Serial.print("|Function Group: ");
         Serial.print(FuncGrp);
         Serial.print("|State = 0b");
         Serial.println(FuncState, BIN);
@@ -354,6 +380,6 @@ void loop()
     if (FactoryDefaultCVIndex && Dcc.isSetCVReady())
     {
         FactoryDefaultCVIndex--; // Decrement first as initially it is the size of the array
-        Dcc.setCV(cvTable[FactoryDefaultCVIndex].cv, cvTable[FactoryDefaultCVIndex].defaultValue);
+        Dcc.setCV(cvFactoryValues[FactoryDefaultCVIndex].cv, cvFactoryValues[FactoryDefaultCVIndex].defaultValue);
     }
 }
