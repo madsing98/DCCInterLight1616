@@ -39,7 +39,6 @@ CV8     Manufacturer ID Number
 CV17+18 Extended Address
 CV19    Consist Address
 CV29    Mode Control
-CV109-110  Manufacturer Version Number - Build number LSB and MSB
 
 CV50    Light Brightness (0..255) (default: 80)
 CV51    Light CCT (Correlated Color Temperature) (0..255)
@@ -369,7 +368,7 @@ void setup()
     // void NmraDcc::init (uint8_t ManufacturerId, uint8_t VersionId, uint8_t Flags, uint8_t OpsModeAddressBaseCV)
     // COMMIT_NUMBER is defined in version.h
     Dcc.pin(pinDCCInput, false);
-    Dcc.init(MAN_ID_DIY, COMMIT_NUMBER, FLAGS_MY_ADDRESS_ONLY | FLAGS_AUTO_FACTORY_DEFAULT, 0);
+    Dcc.init(MAN_ID_DIY, COMMIT_COUNT, FLAGS_MY_ADDRESS_ONLY | FLAGS_AUTO_FACTORY_DEFAULT, 0);
 
     // Commented out as not necessary. Uncomment for debugging purposes only. notifyCVResetFactoryDefault() is
     // automatically called at the very first call (i.e. unprogrammed EEPROM) of
