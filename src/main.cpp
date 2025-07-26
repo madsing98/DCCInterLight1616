@@ -32,6 +32,12 @@ Hardware resources
     - We will also use location 255 to store the status of the functions (F0 to F4). The goal is to have the lights
       in the correct state at power on, before the decoder receives any DCC packet setting these functions
 
+- CV19 Consist Address: When defined (not zero), speed and function commands respond at consist address, not
+    at the primary DCC address.
+    Example: For a train with motor decoder's address set to 32, set primary address of light decoder to 1032 and
+    consist address to 32. All functions will respond at address 32, but use the address 1032 to set the light
+    decoder's CVs
+
 CV Map
 CV1     Primary Address
 CV7     Manufacturer Version Number
@@ -132,8 +138,6 @@ struct cvData
 const struct cvData cvFactoryValues[] =
     {
         {cvPrimaryAddress, 3},
-        {cvManufacturerVersionNumber, 1},
-        {cvManufacturerIDNumber, 13},
         {cvConsistAddress, 0},
         {cvModeControl, 0},
 
