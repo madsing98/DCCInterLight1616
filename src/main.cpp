@@ -139,7 +139,9 @@ const struct cvData cvFactoryValues[] =
     {
         {cvPrimaryAddress, 3},
         {cvConsistAddress, 0},
-        {cvModeControl, 0},
+        {cvExtendedAddressLSB, 0},
+        {cvExtendedAddressMSB, 0},
+        {cvModeControl, 2},
 
         {cvLightBrightness, 80},
         {cvLightColorTemperature, 128},
@@ -380,6 +382,12 @@ void setup()
     // notifyCVResetFactoryDefault();
 
     updateLights();
+
+#ifdef DEBUG
+    Serial.print("DCC Address: ");
+    Serial.println(Dcc.getAddr());
+#endif
+
 }
 
 #ifdef DEBUG
