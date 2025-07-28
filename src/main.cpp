@@ -77,7 +77,7 @@ CV60    Light Test
 #include "version.h"
 
 // Uncomment to send debugging messages to the serial line
-//#define DEBUG
+#define DEBUG
 
 // Hardware pin definitions
 const uint8_t numberOfLights = 2;
@@ -128,7 +128,7 @@ const uint8_t cvLightColorTemperature2 = 54;
 const uint8_t cvLightFctCtrl2 = 55;
 const uint8_t cvLightTest = 60;
 
-// Struct and table for storing CV's address in EEPROM, number and factory default value
+// Struct and table for storing CV's number and factory default value
 struct cvData
 {
     uint16_t cv;
