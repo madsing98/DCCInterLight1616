@@ -383,21 +383,21 @@ void setup()
 }
 
 #ifdef DEBUG
-uint32_t loopCounterLow = 200000;
-uint32_t loopCounterHigh = 0;
+uint32_t stillAliveCounterLow = 200000;
+uint32_t stillAliveCounterHigh = 0;
 #endif
 
 void loop()
 {
 #ifdef DEBUG
-    if (loopCounterLow == 200000)
+    if (stillAliveCounterLow == 200000)
     {
-        loopCounterLow = 0;
-        Serial.print("loop ");
-        Serial.println(loopCounterHigh);
-        loopCounterHigh++;
+        stillAliveCounterLow = 0;
+        Serial.print("still alive ");
+        Serial.println(stillAliveCounterHigh);
+        stillAliveCounterHigh++;
     }
-    loopCounterLow++;
+    stillAliveCounterLow++;
 #endif
 
     // Process DCC packets
