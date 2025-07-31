@@ -469,8 +469,9 @@ void setup()
     updateLights();
 
 #ifdef DEBUG
+    uint16_t dccAddress = dcc.getAddr();
     Serial.print("DCC Address: ");
-    Serial.println(dcc.getAddr());
+    Serial.println(dccAddress);
 #endif
 
 }
