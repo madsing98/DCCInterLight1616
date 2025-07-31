@@ -46,27 +46,32 @@ CV17+18 Extended Address
 CV19    Consist Address
 CV29    Mode Control
 
-CV50    Light Brightness (0..255) (default: 80)
-CV51    Light CCT (Correlated Color Temperature) (0..255)
+CV1000  Light Brightness (0..255) (default: 50)
+CV1001  Light CCT (Correlated Color Temperature) (0..255)
             0: warm white 3000K
-          128: natural white (default)
-          255: cool white 6500K
-CV52    Light Function control
+          128: natural white
+          255: cool white 6500K (default)
+CV1002  Light Function control
           0: F0
           1: F1 (default)
           2: F2
           ...
           28: F28
-CV53    Light Brightness Set 2 (0..255) (default: 40)
-CV54    Light CCT (Correlated Color Temperature) Set 2 (0..255)
-CV55    Light Function control Set 2
+CV1003  Light Brightness Set 2 (0..255) (default: 30)
+CV1004  Light CCT (Correlated Color Temperature) Set 2 (0..255)
+            0: warm white 3000K
+          128: natural white
+          255: cool white 6500K (default)
+CV1005  Light Function control Set 2
           0: F0
           1: F1
           2: F2
           ...
+          20: F20 (default)
+          ...
           28: F28
-          255: Not used (default)
-CV60    Light Test
+          255: Not used
+CV1010  Light Test
           0: CV40/CV41 contain light brightness and CCT (default)
           1: CV40/CV41 contain Warm White Luminance and Cool White Luminance (used for testing)
 \*************************************************************************************************************/
@@ -88,7 +93,7 @@ const uint8_t coolWhiteLight = 1;
 const pin_size_t pinDCCInput = PIN_PA2;
 
 // Objects from NmraDcc
-NmraDcc Dcc;
+NmraDcc dcc;
 
 // funcCache[] holds the current state (ON/OFF) of the 29 loco functions F0 to F28
 // They are split into 5 groups (1 to 5, group 0 is not used), which are stored in the EEPROM from the address fctsEepromAddress
@@ -107,54 +112,58 @@ const uint8_t funcGroup[numberOfFunctions] =   {FN_0_4, FN_0_4, FN_0_4, FN_0_4, 
                                                 FN_13_20, FN_13_20, FN_13_20, FN_13_20, FN_13_20, FN_13_20, FN_13_20, FN_13_20, 
                                                 FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28, FN_21_28};
 
-// CV number definitions
-const uint16_t cvCheck = 0;
-const uint16_t cvPrimaryAddress = 1;
-const uint16_t cvManufacturerVersionNumber = 7;
-const uint16_t cvManufacturerIDNumber = 8;
-const uint16_t cvExtendedAddressMSB = 17;
-const uint16_t cvExtendedAddressLSB = 18;
-const uint16_t cvConsistAddress = 19;
-const uint16_t cvModeControl = 29;
-
-// CVs related to light outputs
-const uint16_t cvLightBrightness = 1000;
-const uint16_t cvLightColorTemperature = 1001;
-const uint16_t cvLightFctCtrl = 1002;
-const uint16_t cvLightBrightness2 = 1003;
-const uint16_t cvLightColorTemperature2 = 1004;
-const uint16_t cvLightFctCtrl2 = 1005;
-const uint16_t cvLightTest = 1010;
-
-
-// Struct and table for storing CV's number and their factory default value
+// Struct and table for storing CV's data
 struct cvStruct
 {
-    uint16_t cvNr;              // CV number
-    bool applyDefault;          // True if the default value must be applied after a Factory Reset
-    uint8_t defaultValue;       // Default value applied at first power on or after a Factory Reset
+    uint8_t cvIndex;        // CV index, only used as debug check of cvData[] table
+    uint16_t cvNr;          // CV number as used by DCC
+    bool applyDefault;      // True if the default value must be applied after a Factory Reset
+    bool writable;          // True if the CV can be written. False if the CV is read only
+    uint8_t defaultValue;   // Default value applied at first power on or after a Factory Reset
+    uint8_t value;          // Current value cached in RAM
 };
 
-const struct cvStruct cvData[] =
+// Enum of all CVs, assigning them with their index number. This index is also the address in
+// EEPROM where the CV will be stored
+enum cvIndex
 {
-    {cvPrimaryAddress, true, 3},
-    {cvManufacturerVersionNumber, false, 0},
-    {cvManufacturerIDNumber, false, 0},
-    {cvExtendedAddressLSB, true, 0},
-    {cvExtendedAddressMSB, true, 0},
-    {cvConsistAddress, true, 0},
-    {cvModeControl, true, 2},
-
-    {cvLightBrightness, true, 50},
-    {cvLightColorTemperature, true, 255},
-    {cvLightFctCtrl, true, 1},
-    {cvLightBrightness2, true, 30},
-    {cvLightColorTemperature2, true, 255},
-    {cvLightFctCtrl2, true, 20},
-    {cvLightTest, true, 0}
+    cvPrimaryAddress,
+    cvManufacturerVersionNumber,
+    cvManufacturerIDNumber,
+    cvExtendedAddressMSB,
+    cvExtendedAddressLSB,
+    cvConsistAddress,
+    cvModeControl,
+    cvLightBrightness,
+    cvLightColorTemperature,
+    cvLightFctCtrl,
+    cvLightBrightness2,
+    cvLightColorTemperature2,
+    cvLightFctCtrl2,
+    cvLightTest
 };
 
-uint8_t FactoryDefaultCVIndex = 0;
+struct cvStruct cvData[] =
+{
+//   cvIndex,        cvNr,applyDefault,defaultValue,value 
+    {cvPrimaryAddress, 1, true, true, 3, 0},
+    {cvManufacturerVersionNumber, 7, false, false, 0, 0},
+    {cvManufacturerIDNumber, 8, false, false, 0, 0},
+    {cvExtendedAddressMSB, 17, true, true, 0, 0},
+    {cvExtendedAddressLSB, 18, true, true, 0, 0},
+    {cvConsistAddress, 19, true, true, 0, 0},
+    {cvModeControl, 29, true, true, 2, 0}, 
+    {cvLightBrightness, 1000, true, true, 50, 0},
+    {cvLightColorTemperature, 1001, true, true, 255, 0},
+    {cvLightFctCtrl, 1002, true, true, 1, 0},
+    {cvLightBrightness2, 1003, true, true, 30, 0},
+    {cvLightColorTemperature2, 1004, true, true, 255, 0},
+    {cvLightFctCtrl2, 1005, true, true, 20, 0},
+    {cvLightTest, 1010, true, true, 0, 0}
+};
+
+const uint8_t nrCVs = sizeof(cvData) / sizeof(cvStruct);
+uint8_t factoryDefaultCVIndex = 0;
 
 void updateLights();
 
@@ -178,19 +187,6 @@ void notifyServiceMode(bool inServiceMode)
     }
 }
 
-// This callback function is called when a CV Value changes so we can update the lights
-// void notifyCVChange(uint16_t CV, uint8_t Value)
-// {
-// #ifdef DEBUG
-//     Serial.print("notifyCVChange: CV: ");
-//     Serial.print(CV);
-//     Serial.print(" Value: ");
-//     Serial.println(Value);
-// #endif
-
-//     updateLights();
-// }
-
 // This callback function is called when the CVs must be reset to their factory defaults
 // Make FactoryDefaultCVIndex non-zero and equal to the number of CVs to be reset
 // to flag to the loop() function that a reset to factory defaults needs to be done
@@ -199,7 +195,7 @@ void notifyCVResetFactoryDefault()
 #ifdef DEBUG
     Serial.println("notifyCVResetFactoryDefault");
 #endif
-    FactoryDefaultCVIndex = sizeof(cvData) / sizeof(cvStruct);
+    factoryDefaultCVIndex = nrCVs;
 };
 
 // This callback function is called whenever we receive a DCC Function packet for our address
@@ -232,12 +228,17 @@ uint8_t notifyCVValid(uint16_t CV, uint8_t Writable)
     Serial.println(Writable);
 #endif
 
-    for (uint8_t i = 0; i < sizeof(cvData) / sizeof(cvStruct); i++)
+    for (uint8_t i = 0; i < nrCVs; i++)                 // Locate the CV in cvData[]
     {
-        if (cvData[i].cvNr == CV)
-            return 1;
+        if (cvData[i].cvNr == CV)                       // Found it!
+        {
+            if (!Writable)                              // If we just have to check if the CV is readable
+                return (1);                             // Return "yes"
+            else                                        // If we also have to check if the CV is writable
+                return (uint8_t)cvData[i].writable;     // Return the ".writable" data from cvData[]
+        }
     }
-    return 0;
+    return 0;                                           // If we cannot find the CV, just return "no"
 }
 
 // This function is called when the library needs to read a CV
@@ -245,13 +246,19 @@ uint8_t notifyCVRead(uint16_t CV)
 {
 #ifdef DEBUG
     Serial.print("notifyCVRead: CV: ");
-    Serial.println(CV);
+    Serial.print(CV);
 #endif
 
-for (uint8_t addr = 0; addr < sizeof(cvData) / sizeof(cvStruct); addr++)
+    for (uint8_t i = 0; i < nrCVs; i++)                 // Locate the CV in cvData[]
     {
-        if (cvData[addr].cvNr == CV)
-            return EEPROM.read(addr);
+        if (cvData[i].cvNr == CV)                       // Found it!
+        {
+#ifdef DEBUG
+            Serial.print(" Value: ");
+            Serial.println(cvData[i].value);
+#endif
+            return cvData[i].value;                     // Return the cached value from cvData[]
+        }
     }
 }
 
@@ -265,18 +272,36 @@ uint8_t notifyCVWrite(uint16_t CV, uint8_t Value)
     Serial.println(Value);
 #endif
 
-for (uint8_t addr = 0; addr < sizeof(cvData) / sizeof(cvStruct); addr++)
+    for (uint8_t i = 0; i < nrCVs; i++)                 // Locate the CV in cvData[]
     {
-        if (cvData[addr].cvNr == CV)
+        if (cvData[i].cvNr == CV)                       // Found it!
         {
-            if (EEPROM.read(addr) != Value)
+            if (cvData[i].value != Value)               // If the new value is different than the cached value
             {
-                EEPROM.write(addr, Value);
-                updateLights();
-                return Value;
+                EEPROM.write(i, Value);                 // Store the new value in EEPROM
+                cvData[i].value = Value;                //   and in the cache
+#ifdef DEBUG
+                Serial.print("EEPROM.write: i: ");
+                Serial.print(i);
+                Serial.print(" Value: ");
+                Serial.println(Value);
+#endif
+                updateLights();                         // We update all lights if any CV changes
             }
+            return Value;                               // Return the value written
         }
     }
+}
+
+// Restore all CVs from the EEPROM to the cvData[] cache
+
+void readCVsToCache()
+{
+    for (uint8_t i = 0; i < nrCVs; i++)
+    {
+        cvData[i].value = EEPROM.read(i);
+    }
+
 }
 
 // Restore the status of all functions from the EEPROM to the cache
@@ -346,24 +371,24 @@ void updateLights()
 
     // Process the value of light outputs
     // We use analogWrite() as all output pins support PWM
-    if (checkFunc(Dcc.getCV(cvLightFctCtrl)))
+    if (checkFunc(cvData[cvLightFctCtrl].value))
     {
-        if(!Dcc.getCV(cvLightTest))
+        if(!cvData[cvLightTest].value)
         {
             // Check if we have to use brightness and CCT parameters set 1 or 2
-            if (Dcc.getCV(cvLightFctCtrl2) != 255 && checkFunc(Dcc.getCV(cvLightFctCtrl2)))
+            if (cvData[cvLightFctCtrl2].value != 255 && checkFunc(cvData[cvLightFctCtrl2].value))
             {
                 // Use Set 2
                 // Note: C always performs arithmetic operations in the size of the largest involved datatype
                 // Here we cast the operands to uint16_t
-                warmWhiteLEDBrightness = ((uint16_t)Dcc.getCV(cvLightBrightness2) * (255 - (uint16_t)Dcc.getCV(cvLightColorTemperature2))) / 256;
-                coolWhiteLEDBrightness = ((uint16_t)Dcc.getCV(cvLightBrightness2) * (uint16_t)Dcc.getCV(cvLightColorTemperature2)) / 256;
+                warmWhiteLEDBrightness = ((uint16_t)cvData[cvLightBrightness2].value * (255 - (uint16_t)cvData[cvLightColorTemperature2].value)) / 256;
+                coolWhiteLEDBrightness = ((uint16_t)cvData[cvLightBrightness2].value * (uint16_t)cvData[cvLightColorTemperature2].value) / 256;
             }
             else
             {
                 // Use Set 1
-                warmWhiteLEDBrightness = ((uint16_t)Dcc.getCV(cvLightBrightness) * (255 - (uint16_t)Dcc.getCV(cvLightColorTemperature))) / 256;
-                coolWhiteLEDBrightness = ((uint16_t)Dcc.getCV(cvLightBrightness) * (uint16_t)Dcc.getCV(cvLightColorTemperature)) / 256;
+                warmWhiteLEDBrightness = ((uint16_t)cvData[cvLightBrightness].value * (255 - (uint16_t)cvData[cvLightColorTemperature].value)) / 256;
+                coolWhiteLEDBrightness = ((uint16_t)cvData[cvLightBrightness].value * (uint16_t)cvData[cvLightColorTemperature].value) / 256;
             }
             analogWrite(pinLight[warmWhiteLight], warmWhiteLuminanceTable[warmWhiteLEDBrightness]);
             analogWrite(pinLight[coolWhiteLight], coolWhiteLuminanceTable[coolWhiteLEDBrightness]);
@@ -380,8 +405,8 @@ void updateLights()
         }
         else
         {
-            analogWrite(pinLight[warmWhiteLight], Dcc.getCV(cvLightBrightness));
-            analogWrite(pinLight[coolWhiteLight], Dcc.getCV(cvLightColorTemperature));
+            analogWrite(pinLight[warmWhiteLight], cvData[cvLightBrightness].value);
+            analogWrite(pinLight[coolWhiteLight], cvData[cvLightColorTemperature].value);
         }
     }
     else
@@ -427,13 +452,14 @@ void setup()
 #endif
 
     readFuncsToCache();
+    readCVsToCache();
 
     // Initialize the NmraDcc library
     // void NmraDcc::pin (uint8_t ExtIntPinNum, uint8_t EnablePullup)
     // void NmraDcc::init (uint8_t ManufacturerId, uint8_t VersionId, uint8_t Flags, uint8_t OpsModeAddressBaseCV)
     // COMMIT_NUMBER is defined in version.h
-    Dcc.pin(pinDCCInput, false);
-    Dcc.init(MAN_ID_DIY, COMMIT_COUNT, FLAGS_MY_ADDRESS_ONLY | FLAGS_AUTO_FACTORY_DEFAULT, 0);
+    dcc.pin(pinDCCInput, false);
+    dcc.init(MAN_ID_DIY, COMMIT_COUNT, FLAGS_MY_ADDRESS_ONLY | FLAGS_AUTO_FACTORY_DEFAULT, 0);
 
     // Commented out as not necessary. Uncomment for debugging purposes only. notifyCVResetFactoryDefault() is
     // automatically called at the very first call (i.e. unprogrammed EEPROM) of
@@ -444,7 +470,7 @@ void setup()
 
 #ifdef DEBUG
     Serial.print("DCC Address: ");
-    Serial.println(Dcc.getAddr());
+    Serial.println(dcc.getAddr());
 #endif
 
 }
@@ -468,13 +494,13 @@ void loop()
 #endif
 
     // Process DCC packets
-    Dcc.process();
+    dcc.process();
 
     // Handle resetting CVs to Factory Defaults
-    if (FactoryDefaultCVIndex && Dcc.isSetCVReady())
+    if (factoryDefaultCVIndex && dcc.isSetCVReady())
     {
-        FactoryDefaultCVIndex--; // Decrement first as initially it is the size of the array
-        if (cvData[FactoryDefaultCVIndex].applyDefault)
-            Dcc.setCV(cvData[FactoryDefaultCVIndex].cvNr, cvData[FactoryDefaultCVIndex].defaultValue);
+        factoryDefaultCVIndex--; // Decrement first as initially it is the size of the array
+        if (cvData[factoryDefaultCVIndex].applyDefault)
+            dcc.setCV(cvData[factoryDefaultCVIndex].cvNr, cvData[factoryDefaultCVIndex].defaultValue);
     }
 }
