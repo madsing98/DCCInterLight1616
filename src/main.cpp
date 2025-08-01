@@ -43,7 +43,6 @@ CV1     Primary Address
 CV7     Manufacturer Version Number
 CV8     Manufacturer ID Number
 CV17+18 Extended Address
-CV19    Consist Address
 CV29    Mode Control
 
 CV1000  Light Brightness (0..255) (default: 50)
@@ -132,7 +131,6 @@ enum cvIndex
     cvManufacturerIDNumber,
     cvExtendedAddressMSB,
     cvExtendedAddressLSB,
-    cvConsistAddress,
     cvModeControl,
     cvLightBrightness,
     cvLightColorTemperature,
@@ -151,7 +149,6 @@ struct cvStruct cvData[] =
     {cvManufacturerIDNumber, 8, false, false, 0, 0},
     {cvExtendedAddressMSB, 17, true, true, 0, 0},
     {cvExtendedAddressLSB, 18, true, true, 0, 0},
-    {cvConsistAddress, 19, true, true, 0, 0},
     {cvModeControl, 29, true, true, 2, 0}, 
     {cvLightBrightness, 1000, true, true, 50, 0},
     {cvLightColorTemperature, 1001, true, true, 255, 0},
@@ -168,7 +165,8 @@ uint8_t factoryDefaultCVIndex = 0;
 void updateLights();
 
 // This callback function is called when the decoder enters or exits service mode
-// We update the lights at the end of the service mode
+// We switch off the lights when entering service mode
+// and we switch on (update) the lights at the end of the service mode
 void notifyServiceMode(bool inServiceMode)
 {
 #ifdef DEBUG
@@ -260,6 +258,7 @@ uint8_t notifyCVRead(uint16_t CV)
             return cvData[i].value;                     // Return the cached value from cvData[]
         }
     }
+    return 0;
 }
 
 // This function is called when the library needs to write a CV
@@ -291,6 +290,7 @@ uint8_t notifyCVWrite(uint16_t CV, uint8_t Value)
             return Value;                               // Return the value written
         }
     }
+    return 0;
 }
 
 // Restore all CVs from the EEPROM to the cvData[] cache
@@ -448,9 +448,12 @@ void setup()
     Serial.swap(); // Use the second set of serial pins. TX is on now PA1
     Serial.begin(115200);
     Serial.println();
-    Serial.println("-- Starting tiny DCC interior light decoder --");
+    Serial.print("-- Starting tiny DCC interior light decoder v");
+    Serial.print(COMMIT_COUNT);
+    Serial.println(" --");
 #endif
 
+    // Retrieve the state of DCC functions and DCC CVs from the EEPROM to the cache
     readFuncsToCache();
     readCVsToCache();
 
@@ -466,11 +469,12 @@ void setup()
     // NmraDcc::init() when FLAGS_AUTO_FACTORY_DEFAULT is set
     // notifyCVResetFactoryDefault();
 
+    // Compute the brightness of all lights
     updateLights();
 
 #ifdef DEBUG
     uint16_t dccAddress = dcc.getAddr();
-    Serial.print("DCC Address: ");
+    Serial.print("Decoder's DCC Address: ");
     Serial.println(dccAddress);
 #endif
 
