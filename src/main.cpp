@@ -26,17 +26,13 @@ Hardware resources
 
 - EEPROM
     - The ATtiny1616 EEPROM size is 256 bytes, with addresses ranging from 0 to 255
-    - NmraDcc uses the EEPROM to store CVs. CVs are stored at the location corresponding to the CV number
+    - By default, NmraDcc uses the EEPROM to store CVs. CVs are stored at the location corresponding to the CV number
       (i.e., CV29 is stored at EEPROM location 29). So, with the ATtiny1616 and the NmraDcc library, CV numbers must be
       between 0 and 255
-    - We will also use location 255 to store the status of the functions (F0 to F4). The goal is to have the lights
+    - However, by defining the CV access functions notifyCVRead(), notifyCVWrite() and notifyCVValid(), we can store the CVs
+      at any address in EEPROM
+    - We will also use locations 250-255 to store the status of the functions (F0 to F28). The goal is to have the lights
       in the correct state at power on, before the decoder receives any DCC packet setting these functions
-
-- CV19 Consist Address: When defined (not zero), speed and function commands respond at consist address, not
-    at the primary DCC address.
-    Example: For a train with motor decoder's address set to 32, set primary address of light decoder to 1032 and
-    consist address to 32. All functions will respond at address 32, but use the address 1032 to set the light
-    decoder's CVs
 
 CV Map
 CV1     Primary Address
@@ -63,16 +59,14 @@ CV1004  Light CCT (Correlated Color Temperature) Set 2 (0..255)
           255: cool white 6500K (default)
 CV1005  Light Function control Set 2
           0: F0
-          1: F1
-          2: F2
           ...
           20: F20 (default)
           ...
           28: F28
-          255: Not used
+          255: Control Set 2 not used
 CV1010  Light Test
-          0: CV40/CV41 contain light brightness and CCT (default)
-          1: CV40/CV41 contain Warm White Luminance and Cool White Luminance (used for testing)
+          0: CV1000/CV1001 contain light brightness and CCT (default)
+          1: CV1000/CV1001 contain Warm White Luminance and Cool White Luminance (used for testing)
 \*************************************************************************************************************/
 
 #include <Arduino.h>
@@ -81,7 +75,7 @@ CV1010  Light Test
 #include "version.h"
 
 // Uncomment to send debugging messages to the serial line
-#define DEBUG
+//#define DEBUG
 
 // Hardware pin definitions
 const uint8_t numberOfLights = 2;
@@ -301,7 +295,6 @@ void readCVsToCache()
     {
         cvData[i].value = EEPROM.read(i);
     }
-
 }
 
 // Restore the status of all functions from the EEPROM to the cache
@@ -451,6 +444,25 @@ void setup()
     Serial.print("-- Starting tiny DCC interior light decoder v");
     Serial.print(COMMIT_COUNT);
     Serial.println(" --");
+
+    // Test code, performing some checks on the address of CVs in EEPROM
+    for (uint8_t i = 0; i < nrCVs; i++)
+    {
+        if (cvData[i].cvIndex != i)
+        {
+            Serial.print("-- !!!!! SEQUENCE ERROR in cvData[");
+            Serial.print(i);
+            Serial.println("].cvIndex");
+            Serial.println();
+        }
+        if (cvData[i].cvIndex >= fctsEepromAddress)
+        {
+            Serial.print("-- !!!!! ERROR in cvData[");
+            Serial.print(i);
+            Serial.println("].cvIndex. Higher than fctsEepromAddress");
+            Serial.println();
+        }
+    }
 #endif
 
     // Retrieve the state of DCC functions and DCC CVs from the EEPROM to the cache
@@ -477,7 +489,6 @@ void setup()
     Serial.print("Decoder's DCC Address: ");
     Serial.println(dccAddress);
 #endif
-
 }
 
 #ifdef DEBUG
