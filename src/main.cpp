@@ -60,7 +60,7 @@ CV1004  Light CCT (Correlated Color Temperature) Set 2 (0..255)
 CV1005  Light Function control Set 2
           0: F0
           ...
-          20: F20 (default)
+          10: F10 (default)
           ...
           28: F28
           255: Control Set 2 not used
@@ -149,7 +149,7 @@ struct cvStruct cvData[] =
     {cvLightFctCtrl, 1002, true, true, 1, 0},
     {cvLightBrightness2, 1003, true, true, 30, 0},
     {cvLightColorTemperature2, 1004, true, true, 255, 0},
-    {cvLightFctCtrl2, 1005, true, true, 20, 0},
+    {cvLightFctCtrl2, 1005, true, true, 10, 0},
     {cvLightTest, 1010, true, true, 0, 0}
 };
 
