@@ -249,7 +249,9 @@ uint8_t notifyCVRead(uint16_t CV)
             Serial.print(" Value: ");
             Serial.println(cvData[i].value);
 #endif
-            return cvData[i].value;                     // Return the cached value from cvData[]
+            // Debugging note: Changed from returning the cached value to returning the
+            // value stored in EEPROM during initialization sequence debug
+            return EEPROM.read(i);                     // Return the value stored in EEPROM
         }
     }
     return 0;
@@ -269,7 +271,9 @@ uint8_t notifyCVWrite(uint16_t CV, uint8_t Value)
     {
         if (cvData[i].cvNr == CV)                       // Found it!
         {
-            if (cvData[i].value != Value)               // If the new value is different than the cached value
+            // Debugging note: Changed from testing the cached value to testing the
+            // value stored in EEPROM during initialization sequence debug
+            if (Value != EEPROM.read(i))                // If the new value is different than the value stored in EEPROM
             {
                 EEPROM.write(i, Value);                 // Store the new value in EEPROM
                 cvData[i].value = Value;                //   and in the cache
@@ -476,13 +480,7 @@ void setup()
     readCVsToCache();
 
     // Compute the brightness of all lights
-    updateLights();
-
-    // Startup debugging
-    // Necessary delay. Reason unknown. Calling dcc.init() too fast (for example when not in DEBUG mode)
-    // causes initialization issues and somes CVs (DCC Address) may be corrupt
-    delay(500);
-    //while (!eeprom_is_ready()); // Wait for EEPROM to be ready 
+    updateLights(); 
 
     // Initialize the NmraDcc library
     // void NmraDcc::pin (uint8_t ExtIntPinNum, uint8_t EnablePullup)
