@@ -294,6 +294,12 @@ void readCVsToCache()
     for (uint8_t i = 0; i < nrCVs; i++)
     {
         cvData[i].value = EEPROM.read(i);
+#ifdef DEBUG
+        Serial.print("EEPROM.read: i: ");
+        Serial.print(i);
+        Serial.print(" Value: ");
+        Serial.println(cvData[i].value);
+#endif
     }
 }
 
@@ -469,6 +475,15 @@ void setup()
     readFuncsToCache();
     readCVsToCache();
 
+    // Compute the brightness of all lights
+    updateLights();
+
+    // Startup debugging
+    // Necessary delay. Reason unknown. Calling dcc.init() too fast (for example when not in DEBUG mode)
+    // causes initialization issues and somes CVs (DCC Address) may be corrupt
+    delay(500);
+    //while (!eeprom_is_ready()); // Wait for EEPROM to be ready 
+
     // Initialize the NmraDcc library
     // void NmraDcc::pin (uint8_t ExtIntPinNum, uint8_t EnablePullup)
     // void NmraDcc::init (uint8_t ManufacturerId, uint8_t VersionId, uint8_t Flags, uint8_t OpsModeAddressBaseCV)
@@ -481,10 +496,9 @@ void setup()
     // NmraDcc::init() when FLAGS_AUTO_FACTORY_DEFAULT is set
     // notifyCVResetFactoryDefault();
 
-    // Compute the brightness of all lights
-    updateLights();
-
 #ifdef DEBUG
+    // Get and print the DCC Address. Note that this does not work at first boot after programming
+    // as the CVs have not yet been reset to factory default
     uint16_t dccAddress = dcc.getAddr();
     Serial.print("Decoder's DCC Address: ");
     Serial.println(dccAddress);
@@ -492,14 +506,14 @@ void setup()
 }
 
 #ifdef DEBUG
-uint32_t stillAliveCounterLow = 200000;
+uint32_t stillAliveCounterLow = 1000000;
 uint32_t stillAliveCounterHigh = 0;
 #endif
 
 void loop()
 {
 #ifdef DEBUG
-    if (stillAliveCounterLow == 200000)
+    if (stillAliveCounterLow == 1000000)
     {
         stillAliveCounterLow = 0;
         Serial.print("still alive ");
