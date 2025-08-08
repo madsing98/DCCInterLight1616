@@ -75,7 +75,7 @@ CV1010  Light Test
 #include "version.h"
 
 // Uncomment to send debugging messages to the serial line
-//#define DEBUG
+#define DEBUG
 
 // Hardware pin definitions
 const uint8_t numberOfLights = 2;
