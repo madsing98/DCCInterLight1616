@@ -482,6 +482,9 @@ void setup()
     // Compute the brightness of all lights
     updateLights(); 
 
+    // Debugging. Pause after boot before processing DCC messages
+    delay(1000);
+
     // Initialize the NmraDcc library
     // void NmraDcc::pin (uint8_t ExtIntPinNum, uint8_t EnablePullup)
     // void NmraDcc::init (uint8_t ManufacturerId, uint8_t VersionId, uint8_t Flags, uint8_t OpsModeAddressBaseCV)
