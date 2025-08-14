@@ -93,7 +93,6 @@ NmraDcc dcc;
 const uint8_t numberOfFunctionGroups = FN_LAST;
 const uint8_t numberOfFunctions = 29;
 uint8_t funcCache[numberOfFunctionGroups] = {0, 0, 0, 0, 0, 0};
-const uint16_t fctsEepromAddress = 255 - numberOfFunctionGroups + 1;
 const uint8_t funcBitMask[numberOfFunctions] = {FN_BIT_00, FN_BIT_01, FN_BIT_02, FN_BIT_03, FN_BIT_04,
                                                 FN_BIT_05, FN_BIT_06, FN_BIT_07, FN_BIT_08,
                                                 FN_BIT_09, FN_BIT_10, FN_BIT_11, FN_BIT_12,
@@ -132,12 +131,13 @@ enum cvIndex
     cvLightBrightness2,
     cvLightColorTemperature2,
     cvLightFctCtrl2,
-    cvLightTest
+    cvLightTest,
+    cvChecksum
 };
 
 struct cvStruct cvData[] =
 {
-//   cvIndex,        cvNr,applyDefault,defaultValue,value 
+//   cvIndex,        cvNr,applyDefault,writable,defaultValue,value 
     {cvPrimaryAddress, 1, true, true, 3, 0},
     {cvManufacturerVersionNumber, 7, false, false, 0, 0},
     {cvManufacturerIDNumber, 8, false, false, 0, 0},
@@ -150,17 +150,47 @@ struct cvStruct cvData[] =
     {cvLightBrightness2, 1003, true, true, 30, 0},
     {cvLightColorTemperature2, 1004, true, true, 255, 0},
     {cvLightFctCtrl2, 1005, true, true, 10, 0},
-    {cvLightTest, 1010, true, true, 0, 0}
+    {cvLightTest, 1010, true, true, 0, 0},
+    {cvChecksum, 1011, false, false, 0, 0}
 };
 
 const uint8_t nrCVs = sizeof(cvData) / sizeof(cvStruct);
+// Index used with notifyCVResetFactoryDefault() to reset CVs to their factory default value
 uint8_t factoryDefaultCVIndex = 0;
+// Address in EEPROM where the current states of the DCC functions are stored
+const uint8_t fctsEepromAddress = 255 - numberOfFunctionGroups + 1;
+// Address in EEPROM where the DCC CVs are stored. Arbitrary index, at the beginning
+// of the EEPROM (away from zero, which is more sensitive to corruption?)
+const uint8_t cvEepromAddress = 32;
 
 void updateLights();
 
+#ifdef DEBUG
+// Compute and store as the last CV the checksum of all other CVs
+// The checksum is computed
+// - as the sum of all CVs modulo 256
+// - on the cached values cvData[].value, not the values stored in EEPROM
+void updateCvChecksum()
+{
+    uint8_t i, total = 0;
+    for (i = 0; i < nrCVs-1; i++)
+        total += cvData[i].value;
+    cvData[i].value = total;
+    EEPROM.update(i + cvEepromAddress, total);
+}
+
+// Check that the CV checksum is correct. Return true is correct, false if incorrect
+bool checkCvChecksum()
+{
+    uint8_t i, total = 0;
+    for (i = 0; i < nrCVs-1; i++)
+        total += cvData[i].value;
+    return (total == cvData[i].value);
+}
+#endif
+
 // This callback function is called when the decoder enters or exits service mode
-// We switch off the lights when entering service mode
-// and we switch on (update) the lights at the end of the service mode
+// Ee switch on (update) the lights at the end of the service mode
 void notifyServiceMode(bool inServiceMode)
 {
 #ifdef DEBUG
@@ -168,15 +198,8 @@ void notifyServiceMode(bool inServiceMode)
     Serial.println(inServiceMode);
 #endif
 
-    if (inServiceMode)
-    {
-        digitalWrite(pinLight[warmWhiteLight], LOW);
-        digitalWrite(pinLight[coolWhiteLight], LOW);
-    }
-    else
-    {
+    if (!inServiceMode)
         updateLights();
-    }
 }
 
 // This callback function is called when the CVs must be reset to their factory defaults
@@ -249,11 +272,12 @@ uint8_t notifyCVRead(uint16_t CV)
             Serial.print(" Value: ");
             Serial.println(cvData[i].value);
 #endif
-            // Debugging note: Changed from returning the cached value to returning the
-            // value stored in EEPROM during initialization sequence debug
-            return EEPROM.read(i);                     // Return the value stored in EEPROM
+            return cvData[i].value;                     // Return the value stored in the cache
         }
     }
+#ifdef DEBUG
+    Serial.println(" | Unknown CV!!!");
+#endif
     return 0;
 }
 
@@ -271,15 +295,14 @@ uint8_t notifyCVWrite(uint16_t CV, uint8_t Value)
     {
         if (cvData[i].cvNr == CV)                       // Found it!
         {
-            // Debugging note: Changed from testing the cached value to testing the
-            // value stored in EEPROM during initialization sequence debug
-            if (Value != EEPROM.read(i))                // If the new value is different than the value stored in EEPROM
+            if (Value != cvData[i].value)                // If the new value is different than the value stored in cache
             {
-                EEPROM.write(i, Value);                 // Store the new value in EEPROM
+                EEPROM.write(cvEepromAddress + i, Value);                 // Store the new value in EEPROM
                 cvData[i].value = Value;                //   and in the cache
 #ifdef DEBUG
+                updateCvChecksum();
                 Serial.print("EEPROM.write: i: ");
-                Serial.print(i);
+                Serial.print(cvEepromAddress + i);
                 Serial.print(" Value: ");
                 Serial.println(Value);
 #endif
@@ -288,23 +311,31 @@ uint8_t notifyCVWrite(uint16_t CV, uint8_t Value)
             return Value;                               // Return the value written
         }
     }
+#ifdef DEBUG
+    Serial.println(" | Unknown CV!!!");
+#endif
     return 0;
 }
 
 // Restore all CVs from the EEPROM to the cvData[] cache
-
 void readCVsToCache()
 {
     for (uint8_t i = 0; i < nrCVs; i++)
     {
-        cvData[i].value = EEPROM.read(i);
+        cvData[i].value = EEPROM.read(cvEepromAddress + i);
 #ifdef DEBUG
         Serial.print("EEPROM.read: i: ");
-        Serial.print(i);
+        Serial.print(cvEepromAddress + i);
         Serial.print(" Value: ");
         Serial.println(cvData[i].value);
 #endif
     }
+#ifdef DEBUG
+    if(checkCvChecksum())
+        Serial.println("Checksum correct");
+    else
+        Serial.println("Checksum incorrect!!!!!!!");
+#endif
 }
 
 // Restore the status of all functions from the EEPROM to the cache
@@ -479,11 +510,12 @@ void setup()
     readFuncsToCache();
     readCVsToCache();
 
-    // Compute the brightness of all lights
+    // Compute the brightness of all lights from the CVs in cache
     updateLights(); 
 
-    // Debugging. Pause after boot before processing DCC messages
-    delay(1000);
+    // Pause after boot before processing DCC messages, trying to avoid the service mode
+    // messages sent by the Z21 at boot
+    //delay(100);
 
     // Initialize the NmraDcc library
     // void NmraDcc::pin (uint8_t ExtIntPinNum, uint8_t EnablePullup)
